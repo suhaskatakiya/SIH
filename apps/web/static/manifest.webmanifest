@@ -1,0 +1,17 @@
+{
+  "name": "CropSaathi",
+  "short_name": "CropSaathi",
+  "description": "Book a procurement-centre slot, track the live queue, procurement, and payment status.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F8F5",
+  "theme_color": "#166534",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

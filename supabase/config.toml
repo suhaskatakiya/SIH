@@ -1,0 +1,75 @@
+# =====================================================================
+# CropSaathi — Supabase project config (Phase 1)
+#
+# Used by the Supabase CLI for local dev (`supabase start`) and to describe
+# project settings. For CLOUD, the auth/SMS provider is configured in the
+# dashboard (see SETUP.md) — the values here document the intended shape.
+#
+# `project_id` is a local label; the cloud project is bound via `supabase link`.
+# =====================================================================
+project_id = "cropsaathi"
+
+[api]
+enabled = true
+port = 54321
+# Only these schemas are exposed over PostgREST. RPCs the API calls live in `public`.
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[db.pooler]
+enabled = false
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+# Local email/SMS testing inbox (local dev only).
+enabled = true
+port = 54324
+
+[auth]
+enabled = true
+# The frontend is a static SPA; set to your deployed origin(s) in the dashboard.
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+# Phase 1 identity is mobile OTP only. No email/password, no Aadhaar.
+enable_signup = true
+
+[auth.email]
+enable_signup = false
+enable_confirmations = false
+
+# ---- Phone / SMS OTP (§4.2) --------------------------------------------
+# Real SMS requires an India-compliant provider (Twilio / MSG91) configured in
+# the CLOUD dashboard with a DLT-registered sender + template. For LOCAL dev you
+# can leave a test number below and read the code from the Inbucket inbox, or
+# add a fixed test OTP in the dashboard. OTP values are NEVER logged by the API.
+[auth.sms]
+enable_signup = true
+enable_confirmations = true
+# Uncomment and fill for local Twilio testing (cloud uses the dashboard instead):
+# [auth.sms.twilio]
+# enabled = true
+# account_sid = "env(TWILIO_ACCOUNT_SID)"
+# message_service_sid = "env(TWILIO_MESSAGE_SERVICE_SID)"
+# auth_token = "env(TWILIO_AUTH_TOKEN)"
+
+# Fixed OTPs for demo/testing without spending SMS (maps mobile -> code).
+# Handy for the SIH demo. REMOVE before any real deployment.
+[auth.sms.test_otp]
+# "919876543210" = "123456"
+
+[edge_runtime]
+enabled = true
+# The API façade is deployed as a single function named "api".
+policy = "per_worker"
