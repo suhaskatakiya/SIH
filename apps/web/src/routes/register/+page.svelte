@@ -28,7 +28,7 @@
 
   onMount(() => {
     if (session.status !== 'authenticated' || !session.me) {
-      goto('/login');
+      goto('/login?tab=register');
       return;
     }
     if (session.me.role === 'OPERATOR') {

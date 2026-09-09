@@ -11,36 +11,14 @@
 --   7. Suresh's booking (BK-2026-0001) in today's 09:00 slot with live WAITING queue entry
 -- ============================================================================
 
-begin;
-
--- Fixed UUID constants
-create temp table _seed_constants (
-  centre_id   uuid,
-  ramesh_uid  uuid,
-  suresh_uid  uuid,
-  op_uid      uuid,
-  slot_1_id   uuid,
-  booking_1_id uuid,
-  proc_1_id   uuid
-) on commit drop;
-
-insert into _seed_constants values (
-  '11111111-1111-4111-8111-111111111111'::uuid,
-  '22222222-2222-4222-8222-222222222222'::uuid,
-  '44444444-4444-4444-8444-444444444444'::uuid,
-  '33333333-3333-4333-8333-333333333333'::uuid,
-  '55555555-5555-4555-8555-555555555551'::uuid,
-  '66666666-6666-4666-8666-666666666661'::uuid,
-  '77777777-7777-4777-8777-777777777771'::uuid
-);
-
--- 1. auth.users (mock records for local / Supabase instances)
+-- 1. auth.users (mock auth records for local / Supabase instances)
 insert into auth.users (
   id, instance_id, aud, role, phone, phone_confirmed_at,
   created_at, updated_at, raw_app_meta_data, raw_user_meta_data
 )
-select
-  c.ramesh_uid,
+values
+(
+  '22222222-2222-4222-8222-222222222222'::uuid,
   '00000000-0000-0000-0000-000000000000'::uuid,
   'authenticated',
   'authenticated',
@@ -48,15 +26,9 @@ select
   now(), now(), now(),
   '{"provider":"phone","providers":["phone"]}'::jsonb,
   '{}'::jsonb
-from _seed_constants c
-on conflict (id) do nothing;
-
-insert into auth.users (
-  id, instance_id, aud, role, phone, phone_confirmed_at,
-  created_at, updated_at, raw_app_meta_data, raw_user_meta_data
-)
-select
-  c.suresh_uid,
+),
+(
+  '44444444-4444-4444-8444-444444444444'::uuid,
   '00000000-0000-0000-0000-000000000000'::uuid,
   'authenticated',
   'authenticated',
@@ -64,15 +36,9 @@ select
   now(), now(), now(),
   '{"provider":"phone","providers":["phone"]}'::jsonb,
   '{}'::jsonb
-from _seed_constants c
-on conflict (id) do nothing;
-
-insert into auth.users (
-  id, instance_id, aud, role, phone, phone_confirmed_at,
-  created_at, updated_at, raw_app_meta_data, raw_user_meta_data
-)
-select
-  c.op_uid,
+),
+(
+  '33333333-3333-4333-8333-333333333333'::uuid,
   '00000000-0000-0000-0000-000000000000'::uuid,
   'authenticated',
   'authenticated',
@@ -80,26 +46,40 @@ select
   now(), now(), now(),
   '{"provider":"phone","providers":["phone"]}'::jsonb,
   '{}'::jsonb
-from _seed_constants c
+)
 on conflict (id) do nothing;
 
 -- 2. public.profiles
 insert into public.profiles (id, role, mobile_e164, profile_complete)
-select c.ramesh_uid, 'FARMER', '+919876543210', true from _seed_constants c
-on conflict (id) do update set role = excluded.role, profile_complete = excluded.profile_complete;
-
-insert into public.profiles (id, role, mobile_e164, profile_complete)
-select c.suresh_uid, 'FARMER', '+919812345678', true from _seed_constants c
-on conflict (id) do update set role = excluded.role, profile_complete = excluded.profile_complete;
-
-insert into public.profiles (id, role, mobile_e164, profile_complete)
-select c.op_uid, 'OPERATOR', '+919999900001', true from _seed_constants c
+values
+  ('22222222-2222-4222-8222-222222222222'::uuid, 'FARMER', '+919876543210', true),
+  ('44444444-4444-4444-8444-444444444444'::uuid, 'FARMER', '+919812345678', true),
+  ('33333333-3333-4333-8333-333333333333'::uuid, 'OPERATOR', '+919999900001', true)
 on conflict (id) do update set role = excluded.role, profile_complete = excluded.profile_complete;
 
 -- 3. public.farmers
 insert into public.farmers (user_id, full_name, state_code, district, village, external_farmer_ref, preferred_language, privacy_acknowledged_at)
-select c.ramesh_uid, 'Ramesh Patel', 'GJ', 'Gandhinagar', 'Demo Village', 'GJ-GNR-004821', 'hi', now()
-from _seed_constants c
+values
+(
+  '22222222-2222-4222-8222-222222222222'::uuid,
+  'Ramesh Patel',
+  'GJ',
+  'Gandhinagar',
+  'Demo Village',
+  'GJ-GNR-004821',
+  'hi',
+  now()
+),
+(
+  '44444444-4444-4444-8444-444444444444'::uuid,
+  'Suresh Kumar',
+  'GJ',
+  'Gandhinagar',
+  'Demo Village North',
+  null,
+  'hi',
+  now()
+)
 on conflict (user_id) do update set
   full_name = excluded.full_name,
   state_code = excluded.state_code,
@@ -107,19 +87,17 @@ on conflict (user_id) do update set
   village = excluded.village,
   external_farmer_ref = excluded.external_farmer_ref;
 
-insert into public.farmers (user_id, full_name, state_code, district, village, external_farmer_ref, preferred_language, privacy_acknowledged_at)
-select c.suresh_uid, 'Suresh Kumar', 'GJ', 'Gandhinagar', 'Demo Village North', null, 'hi', now()
-from _seed_constants c
-on conflict (user_id) do update set
-  full_name = excluded.full_name,
-  state_code = excluded.state_code,
-  district = excluded.district,
-  village = excluded.village;
-
 -- 4. public.centres
 insert into public.centres (id, name, state_code, district, address_text, avg_service_minutes, active)
-select c.centre_id, 'SIH Demo Procurement Centre 01', 'GJ', 'Gandhinagar', 'APMC Yard, Sector 11, Gandhinagar', 10, true
-from _seed_constants c
+values (
+  '11111111-1111-4111-8111-111111111111'::uuid,
+  'SIH Demo Procurement Centre 01',
+  'GJ',
+  'Gandhinagar',
+  'APMC Yard, Sector 11, Gandhinagar',
+  10,
+  true
+)
 on conflict (id) do update set
   name = excluded.name,
   state_code = excluded.state_code,
@@ -129,7 +107,10 @@ on conflict (id) do update set
 
 -- 5. public.operator_centres
 insert into public.operator_centres (operator_user_id, centre_id)
-select c.op_uid, c.centre_id from _seed_constants c
+values (
+  '33333333-3333-4333-8333-333333333333'::uuid,
+  '11111111-1111-4111-8111-111111111111'::uuid
+)
 on conflict (operator_user_id, centre_id) do nothing;
 
 -- 6. public.procurement_rates
@@ -148,17 +129,24 @@ on conflict do nothing;
 -- 7. public.slots for today and upcoming 2 days
 -- Slot 1 (Today 09:00 - 09:30): Suresh's pre-booked slot
 insert into public.slots (id, centre_id, date, start_time, end_time, capacity, booked_count, active)
-select c.slot_1_id, c.centre_id, current_date, '09:00'::time, '09:30'::time, 12, 1, true
-from _seed_constants c
+values (
+  '55555555-5555-4555-8555-555555555551'::uuid,
+  '11111111-1111-4111-8111-111111111111'::uuid,
+  current_date,
+  '09:00'::time,
+  '09:30'::time,
+  12,
+  1,
+  true
+)
 on conflict (centre_id, date, start_time, end_time) do update set
   booked_count = greatest(public.slots.booked_count, 1),
   active = true;
 
 -- Remaining slots for today
 insert into public.slots (centre_id, date, start_time, end_time, capacity, booked_count, active)
-select c.centre_id, current_date, t.st::time, t.et::time, 12, 0, true
-from _seed_constants c,
-(values
+select '11111111-1111-4111-8111-111111111111'::uuid, current_date, t.st::time, t.et::time, 12, 0, true
+from (values
   ('09:30', '10:00'),
   ('10:00', '10:30'),
   ('10:30', '11:00'),
@@ -168,9 +156,8 @@ on conflict (centre_id, date, start_time, end_time) do nothing;
 
 -- Slots for tomorrow (Day + 1)
 insert into public.slots (centre_id, date, start_time, end_time, capacity, booked_count, active)
-select c.centre_id, current_date + interval '1 day', t.st::time, t.et::time, 12, 0, true
-from _seed_constants c,
-(values
+select '11111111-1111-4111-8111-111111111111'::uuid, current_date + interval '1 day', t.st::time, t.et::time, 12, 0, true
+from (values
   ('09:00', '09:30'),
   ('09:30', '10:00'),
   ('10:00', '10:30'),
@@ -181,9 +168,8 @@ on conflict (centre_id, date, start_time, end_time) do nothing;
 
 -- Slots for Day + 2
 insert into public.slots (centre_id, date, start_time, end_time, capacity, booked_count, active)
-select c.centre_id, current_date + interval '2 days', t.st::time, t.et::time, 12, 0, true
-from _seed_constants c,
-(values
+select '11111111-1111-4111-8111-111111111111'::uuid, current_date + interval '2 days', t.st::time, t.et::time, 12, 0, true
+from (values
   ('09:00', '09:30'),
   ('09:30', '10:00'),
   ('10:00', '10:30'),
@@ -198,34 +184,44 @@ insert into public.bookings (
   commodity_code, expected_quantity_qtl, status
 )
 select
-  c.booking_1_id,
+  '66666666-6666-4666-8666-666666666661'::uuid,
   'BK-2026-0001',
   f.id,
-  c.centre_id,
-  c.slot_1_id,
+  '11111111-1111-4111-8111-111111111111'::uuid,
+  '55555555-5555-4555-8555-555555555551'::uuid,
   'PADDY_COMMON',
   22.00,
   'IN_QUEUE'
-from _seed_constants c
-join public.farmers f on f.user_id = c.suresh_uid
+from public.farmers f
+where f.user_id = '44444444-4444-4444-8444-444444444444'::uuid
 on conflict (reference) do nothing;
 
 -- 9. Suresh's queue entry (checked-in, WAITING)
 insert into public.queue_entries (booking_id, centre_id, date, seq, state)
-select c.booking_1_id, c.centre_id, current_date, 1, 'WAITING'
-from _seed_constants c
+values (
+  '66666666-6666-4666-8666-666666666661'::uuid,
+  '11111111-1111-4111-8111-111111111111'::uuid,
+  current_date,
+  1,
+  'WAITING'
+)
 on conflict (booking_id) do nothing;
 
 -- 10. Procurement shell
 insert into public.procurements (id, booking_id, centre_id, commodity_code, status)
-select c.proc_1_id, c.booking_1_id, c.centre_id, 'PADDY_COMMON', 'NOT_STARTED'
-from _seed_constants c
+values (
+  '77777777-7777-4777-8777-777777777771'::uuid,
+  '66666666-6666-4666-8666-666666666661'::uuid,
+  '11111111-1111-4111-8111-111111111111'::uuid,
+  'PADDY_COMMON',
+  'NOT_STARTED'
+)
 on conflict (booking_id) do nothing;
 
 -- 11. Payment shell
 insert into public.payments (procurement_id, status)
-select c.proc_1_id, 'NOT_STARTED'
-from _seed_constants c
+values (
+  '77777777-7777-4777-8777-777777777771'::uuid,
+  'NOT_STARTED'
+)
 on conflict (procurement_id) do nothing;
-
-commit;

@@ -13,9 +13,19 @@
     "check": "pnpm --filter @cropsaathi/contracts build && pnpm --filter @cropsaathi/web check",
     "test": "pnpm --filter @cropsaathi/contracts test",
     "contracts:build": "pnpm --filter @cropsaathi/contracts build",
-    "contracts:sync": "node scripts/sync-contracts.mjs"
+    "contracts:sync": "node scripts/sync-contracts.mjs",
+    "api:serve": "tsx scripts/serve-api.mjs",
+    "db:status": "node scripts/inspect-db.mjs"
   },
   "devDependencies": {
+    "tsx": "^4.23.13",
     "typescript": "^5.6.3"
+  },
+  "dependencies": {
+    "@cropsaathi/contracts": "workspace:^",
+    "@hono/node-server": "^2.1.1",
+    "@supabase/supabase-js": "^2.116.0",
+    "dotenv": "^17.4.2",
+    "hono": "^4.13.7"
   }
 }
