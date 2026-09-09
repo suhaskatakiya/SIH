@@ -309,7 +309,23 @@ function seed(): MockDb {
       }
     ],
     operatorCentres: [{ user_id: USER_OPERATOR, centre_id: CENTRE_1 }],
-    rates: [{ commodity_code: 'PADDY_COMMON', rate_per_qtl: '2441.00', active: true }],
+    rates: [
+      { commodity_code: 'PADDY_COMMON', rate_per_qtl: '2441.00', active: true },
+      { commodity_code: 'PADDY_GRADE_A', rate_per_qtl: '2489.00', active: true },
+      { commodity_code: 'WHEAT', rate_per_qtl: '2425.00', active: true },
+      { commodity_code: 'MAIZE', rate_per_qtl: '2225.00', active: true },
+      { commodity_code: 'BARLEY', rate_per_qtl: '1850.00', active: true },
+      { commodity_code: 'BAJRA', rate_per_qtl: '2625.00', active: true },
+      { commodity_code: 'JOWAR_HYBRID', rate_per_qtl: '3371.00', active: true },
+      { commodity_code: 'CHANA', rate_per_qtl: '5650.00', active: true },
+      { commodity_code: 'TUR_ARHAR', rate_per_qtl: '7550.00', active: true },
+      { commodity_code: 'MOONG', rate_per_qtl: '8682.00', active: true },
+      { commodity_code: 'URAD', rate_per_qtl: '7400.00', active: true },
+      { commodity_code: 'SOYBEAN_YELLOW', rate_per_qtl: '4892.00', active: true },
+      { commodity_code: 'MUSTARD', rate_per_qtl: '5950.00', active: true },
+      { commodity_code: 'GROUNDNUT', rate_per_qtl: '6783.00', active: true },
+      { commodity_code: 'COTTON_MEDIUM', rate_per_qtl: '7121.00', active: true }
+    ],
     slots: [],
     bookings: [],
     queue: [],
@@ -600,6 +616,18 @@ export function createMockClient(): ApiClient {
       const proc = procurementForBooking(booking.id) ?? null;
       const pay = proc ? db.payments.find((p) => p.procurement_id === proc.id) ?? null : null;
 
+      const allUpcoming = mine.map((b) => ({
+        id: b.id,
+        reference: b.reference,
+        centre_name: b.centre_name,
+        commodity_code: b.commodity_code,
+        expected_quantity_qtl: b.expected_quantity_qtl,
+        slot_date: b.slot_date,
+        slot_start: b.slot_start,
+        slot_end: b.slot_end,
+        status: b.status
+      }));
+
       return {
         upcoming_booking: {
           id: booking.id,
@@ -612,6 +640,7 @@ export function createMockClient(): ApiClient {
           slot_end: booking.slot_end,
           status: booking.status
         },
+        upcoming_bookings: allUpcoming,
         active_queue,
         procurement: proc
           ? {
@@ -637,7 +666,7 @@ export function createMockClient(): ApiClient {
 
     /* ---- centres / slots ---- */
     async getCentres(query: CentresQuery): Promise<CentresResponse> {
-      requireFarmer();
+      currentUser();
       const rate = db.rates.find((r) => r.commodity_code === query.commodity_code && r.active);
       if (!rate) return { centres: [] };
       const centres = db.centres.map((c) => {
@@ -655,7 +684,7 @@ export function createMockClient(): ApiClient {
     },
 
     async getSlots(centreId: string, query: SlotsQuery): Promise<SlotsResponse> {
-      requireFarmer();
+      currentUser();
       centreById(centreId);
       const slots = db.slots
         .filter((s) => s.centre_id === centreId && s.date === query.date && s.active)

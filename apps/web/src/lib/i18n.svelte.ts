@@ -86,13 +86,17 @@ const dict: Record<string, Entry> = {
 
   // ---- farmer dashboard ----
   'dash.title': { en: 'Your dashboard', hi: 'आपका डैशबोर्ड' },
-  'dash.upcoming': { en: 'Upcoming booking', hi: 'आगामी बुकिंग' },
+  'dash.welcome': { en: 'Namaste', hi: 'नमस्ते' },
+  'dash.upcoming': { en: 'Upcoming slot', hi: 'आगामी स्लॉट' },
+  'dash.allUpcoming': { en: 'Upcoming & Scheduled Slots', hi: 'आगामी और निर्धारित स्लॉट' },
   'dash.noBooking': { en: 'No upcoming booking', hi: 'कोई आगामी बुकिंग नहीं' },
   'dash.noBookingSub': { en: 'Book a slot at your procurement centre to get started.', hi: 'शुरू करने के लिए अपने खरीद केंद्र पर स्लॉट बुक करें।' },
   'dash.bookNow': { en: 'Book a slot', hi: 'स्लॉट बुक करें' },
+  'dash.bookAnother': { en: '+ Book a new slot', hi: '+ नया स्लॉट बुक करें' },
   'dash.viewQueue': { en: 'View live queue', hi: 'लाइव कतार देखें' },
   'dash.viewStatus': { en: 'View procurement', hi: 'खरीद देखें' },
   'dash.viewPayment': { en: 'View payment', hi: 'भुगतान देखें' },
+  'dash.quickOverview': { en: 'Overview', hi: 'अवलोकन' },
 
   // ---- book ----
   'book.title': { en: 'Book a slot', hi: 'स्लॉट बुक करें' },

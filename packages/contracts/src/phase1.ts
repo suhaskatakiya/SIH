@@ -154,6 +154,7 @@ export type DashboardPayment = z.infer<typeof DashboardPayment>;
 
 export const FarmerDashboardResponse = z.object({
   upcoming_booking: DashboardBooking.nullable(),
+  upcoming_bookings: z.array(DashboardBooking).optional(),
   active_queue: DashboardQueue.nullable(),
   procurement: DashboardProcurement.nullable(),
   payment: DashboardPayment.nullable()

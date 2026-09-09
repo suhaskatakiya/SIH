@@ -114,8 +114,10 @@ values (
 on conflict (operator_user_id, centre_id) do nothing;
 
 -- 6. public.procurement_rates
-insert into public.procurement_rates (state_code, scheme, season, commodity_code, rate_per_qtl, source, active)
-values (
+insert into public.procurement_rates (id, state_code, scheme, season, commodity_code, rate_per_qtl, source, active)
+values
+(
+  '88888888-8888-4888-8888-888888888881'::uuid,
   'GJ',
   'MSP Kharif',
   '2026-27',
@@ -123,8 +125,150 @@ values (
   2441.00,
   'Government of India MSP Notification 2026-27',
   true
+),
+(
+  '88888888-8888-4888-8888-888888888882'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'PADDY_GRADE_A',
+  2489.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-888888888883'::uuid,
+  'GJ',
+  'MSP Rabi',
+  '2026-27',
+  'WHEAT',
+  2425.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-888888888884'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'MAIZE',
+  2225.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-888888888885'::uuid,
+  'GJ',
+  'MSP Rabi',
+  '2026-27',
+  'BARLEY',
+  1850.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-888888888886'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'BAJRA',
+  2625.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-888888888887'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'JOWAR_HYBRID',
+  3371.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-888888888888'::uuid,
+  'GJ',
+  'MSP Rabi',
+  '2026-27',
+  'CHANA',
+  5650.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-888888888889'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'TUR_ARHAR',
+  7550.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-88888888888a'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'MOONG',
+  8682.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-88888888888b'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'URAD',
+  7400.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-88888888888c'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'SOYBEAN_YELLOW',
+  4892.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-88888888888d'::uuid,
+  'GJ',
+  'MSP Rabi',
+  '2026-27',
+  'MUSTARD',
+  5950.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-88888888888e'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'GROUNDNUT',
+  6783.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-88888888888f'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'COTTON_MEDIUM',
+  7121.00,
+  'Government of India MSP Notification 2026-27',
+  true
 )
-on conflict do nothing;
+on conflict (id) do update set
+  rate_per_qtl = excluded.rate_per_qtl,
+  active = excluded.active;
 
 -- 7. public.slots for today and upcoming 2 days
 -- Slot 1 (Today 09:00 - 09:30): Suresh's pre-booked slot
@@ -225,3 +369,6 @@ values (
   'NOT_STARTED'
 )
 on conflict (procurement_id) do nothing;
+
+-- 12. Advance booking_ref_seq past seed data (BK-2026-0001) so next booking is BK-2026-0002
+select setval('public.booking_ref_seq', 1, true);

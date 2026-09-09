@@ -29,16 +29,6 @@ as $$
   select auth.uid();
 $$;
 
--- Role of the current user, or NULL if no profile.
-create or replace function public.current_role()
-returns public.role_enum
-language sql
-stable
-security definer
-set search_path = public, pg_temp
-as $$
-  select p.role from public.profiles p where p.id = auth.uid();
-$$;
 
 -- The farmers.id owned by the current user (NULL if none).
 create or replace function public.my_farmer_id()

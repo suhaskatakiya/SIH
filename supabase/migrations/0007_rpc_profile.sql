@@ -106,17 +106,18 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_uid     uuid := auth.uid();
-  v_role    public.role_enum;
-  v_farmer  uuid;
-  b         public.bookings;
-  s         public.slots;
-  c         public.centres;
-  pr        public.procurements;
-  pay       public.payments;
-  v_queue   json := null;
-  v_proc    json := null;
-  v_pay     json := null;
+  v_uid          uuid := auth.uid();
+  v_role         public.role_enum;
+  v_farmer       uuid;
+  b              public.bookings;
+  s              public.slots;
+  c              public.centres;
+  pr             public.procurements;
+  pay            public.payments;
+  v_queue        json := null;
+  v_proc         json := null;
+  v_pay          json := null;
+  v_all_bookings json := '[]'::json;
 begin
   if v_uid is null then perform public.app_error('UNAUTHENTICATED'); end if;
   select role into v_role from public.profiles where id = v_uid;
@@ -125,9 +126,28 @@ begin
 
   v_farmer := public.my_farmer_id();
   if v_farmer is null then
-    return json_build_object('upcoming_booking', null, 'active_queue', null,
-                             'procurement', null, 'payment', null);
+    return json_build_object('upcoming_booking', null, 'upcoming_bookings', '[]'::json,
+                             'active_queue', null, 'procurement', null, 'payment', null);
   end if;
+
+  -- Query all non-cancelled bookings for this farmer, ordered by slot date & time
+  select coalesce(json_agg(
+    json_build_object(
+      'id',                    bk.id,
+      'reference',             bk.reference,
+      'centre_name',           ct.name,
+      'commodity_code',        bk.commodity_code,
+      'expected_quantity_qtl', bk.expected_quantity_qtl::text,
+      'slot_date',             sl.date::text,
+      'slot_start',            to_char(sl.start_time, 'HH24:MI'),
+      'slot_end',              to_char(sl.end_time, 'HH24:MI'),
+      'status',                bk.status
+    ) order by sl.date asc, sl.start_time asc, bk.created_at asc
+  ), '[]'::json) into v_all_bookings
+  from public.bookings bk
+  join public.slots sl on sl.id = bk.slot_id
+  join public.centres ct on ct.id = bk.centre_id
+  where bk.farmer_id = v_farmer and bk.status <> 'CANCELLED';
 
   -- Prefer the most recent still-active booking; else the most recent overall.
   select * into b
@@ -137,8 +157,8 @@ begin
   limit 1;
 
   if not found then
-    return json_build_object('upcoming_booking', null, 'active_queue', null,
-                             'procurement', null, 'payment', null);
+    return json_build_object('upcoming_booking', null, 'upcoming_bookings', '[]'::json,
+                             'active_queue', null, 'procurement', null, 'payment', null);
   end if;
 
   select * into s from public.slots  where id = b.slot_id;
@@ -184,6 +204,7 @@ begin
       'slot_end',              to_char(s.end_time, 'HH24:MI'),
       'status',                b.status
     ),
+    'upcoming_bookings', v_all_bookings,
     'active_queue', v_queue,
     'procurement',  v_proc,
     'payment',      v_pay

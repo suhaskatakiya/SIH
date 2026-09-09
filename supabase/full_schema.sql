@@ -319,16 +319,6 @@ as $$
   select auth.uid();
 $$;
 
--- Role of the current user, or NULL if no profile.
-create or replace function public.current_role()
-returns public.role_enum
-language sql
-stable
-security definer
-set search_path = public, pg_temp
-as $$
-  select p.role from public.profiles p where p.id = auth.uid();
-$$;
 
 -- The farmers.id owned by the current user (NULL if none).
 create or replace function public.my_farmer_id()
@@ -728,17 +718,18 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_uid     uuid := auth.uid();
-  v_role    public.role_enum;
-  v_farmer  uuid;
-  b         public.bookings;
-  s         public.slots;
-  c         public.centres;
-  pr        public.procurements;
-  pay       public.payments;
-  v_queue   json := null;
-  v_proc    json := null;
-  v_pay     json := null;
+  v_uid          uuid := auth.uid();
+  v_role         public.role_enum;
+  v_farmer       uuid;
+  b              public.bookings;
+  s              public.slots;
+  c              public.centres;
+  pr             public.procurements;
+  pay            public.payments;
+  v_queue        json := null;
+  v_proc         json := null;
+  v_pay          json := null;
+  v_all_bookings json := '[]'::json;
 begin
   if v_uid is null then perform public.app_error('UNAUTHENTICATED'); end if;
   select role into v_role from public.profiles where id = v_uid;
@@ -747,9 +738,28 @@ begin
 
   v_farmer := public.my_farmer_id();
   if v_farmer is null then
-    return json_build_object('upcoming_booking', null, 'active_queue', null,
-                             'procurement', null, 'payment', null);
+    return json_build_object('upcoming_booking', null, 'upcoming_bookings', '[]'::json,
+                             'active_queue', null, 'procurement', null, 'payment', null);
   end if;
+
+  -- Query all non-cancelled bookings for this farmer, ordered by slot date & time
+  select coalesce(json_agg(
+    json_build_object(
+      'id',                    bk.id,
+      'reference',             bk.reference,
+      'centre_name',           ct.name,
+      'commodity_code',        bk.commodity_code,
+      'expected_quantity_qtl', bk.expected_quantity_qtl::text,
+      'slot_date',             sl.date::text,
+      'slot_start',            to_char(sl.start_time, 'HH24:MI'),
+      'slot_end',              to_char(sl.end_time, 'HH24:MI'),
+      'status',                bk.status
+    ) order by sl.date asc, sl.start_time asc, bk.created_at asc
+  ), '[]'::json) into v_all_bookings
+  from public.bookings bk
+  join public.slots sl on sl.id = bk.slot_id
+  join public.centres ct on ct.id = bk.centre_id
+  where bk.farmer_id = v_farmer and bk.status <> 'CANCELLED';
 
   -- Prefer the most recent still-active booking; else the most recent overall.
   select * into b
@@ -759,8 +769,8 @@ begin
   limit 1;
 
   if not found then
-    return json_build_object('upcoming_booking', null, 'active_queue', null,
-                             'procurement', null, 'payment', null);
+    return json_build_object('upcoming_booking', null, 'upcoming_bookings', '[]'::json,
+                             'active_queue', null, 'procurement', null, 'payment', null);
   end if;
 
   select * into s from public.slots  where id = b.slot_id;
@@ -806,6 +816,7 @@ begin
       'slot_end',              to_char(s.end_time, 'HH24:MI'),
       'status',                b.status
     ),
+    'upcoming_bookings', v_all_bookings,
     'active_queue', v_queue,
     'procurement',  v_proc,
     'payment',      v_pay
@@ -896,7 +907,7 @@ as $$
 declare
   v_centres json;
 begin
-  perform public.require_farmer_uid();
+  if auth.uid() is null then perform public.app_error('UNAUTHENTICATED'); end if;
 
   -- No active rate for this commodity → no centres offer it (matches mock).
   if not exists (
@@ -939,7 +950,7 @@ as $$
 declare
   v_slots json;
 begin
-  perform public.require_farmer_uid();
+  if auth.uid() is null then perform public.app_error('UNAUTHENTICATED'); end if;
   if not exists (select 1 from public.centres where id = p_centre) then
     perform public.app_error('CENTRE_NOT_FOUND');
   end if;
@@ -1880,8 +1891,10 @@ values (
 on conflict (operator_user_id, centre_id) do nothing;
 
 -- 6. public.procurement_rates
-insert into public.procurement_rates (state_code, scheme, season, commodity_code, rate_per_qtl, source, active)
-values (
+insert into public.procurement_rates (id, state_code, scheme, season, commodity_code, rate_per_qtl, source, active)
+values
+(
+  '88888888-8888-4888-8888-888888888881'::uuid,
   'GJ',
   'MSP Kharif',
   '2026-27',
@@ -1889,8 +1902,150 @@ values (
   2441.00,
   'Government of India MSP Notification 2026-27',
   true
+),
+(
+  '88888888-8888-4888-8888-888888888882'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'PADDY_GRADE_A',
+  2489.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-888888888883'::uuid,
+  'GJ',
+  'MSP Rabi',
+  '2026-27',
+  'WHEAT',
+  2425.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-888888888884'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'MAIZE',
+  2225.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-888888888885'::uuid,
+  'GJ',
+  'MSP Rabi',
+  '2026-27',
+  'BARLEY',
+  1850.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-888888888886'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'BAJRA',
+  2625.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-888888888887'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'JOWAR_HYBRID',
+  3371.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-888888888888'::uuid,
+  'GJ',
+  'MSP Rabi',
+  '2026-27',
+  'CHANA',
+  5650.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-888888888889'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'TUR_ARHAR',
+  7550.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-88888888888a'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'MOONG',
+  8682.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-88888888888b'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'URAD',
+  7400.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-88888888888c'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'SOYBEAN_YELLOW',
+  4892.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-88888888888d'::uuid,
+  'GJ',
+  'MSP Rabi',
+  '2026-27',
+  'MUSTARD',
+  5950.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-88888888888e'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'GROUNDNUT',
+  6783.00,
+  'Government of India MSP Notification 2026-27',
+  true
+),
+(
+  '88888888-8888-4888-8888-88888888888f'::uuid,
+  'GJ',
+  'MSP Kharif',
+  '2026-27',
+  'COTTON_MEDIUM',
+  7121.00,
+  'Government of India MSP Notification 2026-27',
+  true
 )
-on conflict do nothing;
+on conflict (id) do update set
+  rate_per_qtl = excluded.rate_per_qtl,
+  active = excluded.active;
 
 -- 7. public.slots for today and upcoming 2 days
 -- Slot 1 (Today 09:00 - 09:30): Suresh's pre-booked slot
@@ -1991,4 +2146,7 @@ values (
   'NOT_STARTED'
 )
 on conflict (procurement_id) do nothing;
+
+-- 12. Advance booking_ref_seq past seed data (BK-2026-0001) so next booking is BK-2026-0002
+select setval('public.booking_ref_seq', 1, true);
 

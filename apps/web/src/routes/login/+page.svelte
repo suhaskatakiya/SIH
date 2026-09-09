@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { api, isApiClientError } from '$lib/services';
+  import { api, API_MODE, isApiClientError } from '$lib/services';
   import { completeLogin, refreshMe, session } from '$lib/session.svelte';
   import { t, errorMessage, setLang } from '$lib/i18n.svelte';
   import ErrorBanner from '$lib/components/ErrorBanner.svelte';
@@ -11,8 +11,11 @@
   // State: Tab toggle ('login' | 'register')
   let mode = $state<'login' | 'register'>('login');
 
-  // Login form fields (clean 10-digit number without prefix)
+  // Login steps: 'phone' (enter mobile) | 'otp' (verify 6-digit OTP)
+  let loginStep = $state<'phone' | 'otp'>('phone');
   let loginPhoneDigits = $state('9876543210');
+  let enteredOtp = $state('');
+  let maskedPhone = $state('');
 
   // Registration form fields
   let regPhoneDigits = $state('');
@@ -75,13 +78,11 @@
   ];
 
   onMount(() => {
-    // Check if ?tab=register was passed in the URL
     const tabParam = $page.url.searchParams.get('tab');
     if (tabParam === 'register') {
       mode = 'register';
     }
 
-    // Auto redirect if already authenticated
     if (session.status === 'authenticated' && session.me) {
       redirectHome();
     }
@@ -92,6 +93,7 @@
       goto('/operator/dashboard');
     } else if (session.me && !session.me.profile_complete) {
       mode = 'register';
+      regPhoneDigits = loginPhoneDigits;
     } else {
       goto('/dashboard');
     }
@@ -110,34 +112,58 @@
     return errorMessage('INTERNAL_ERROR', 'Something went wrong. Please try again.');
   }
 
-  // Direct login with mobile number (no OTP prompt required)
-  async function handleLogin(targetDigits?: string) {
+  // Step 1: Request OTP for login
+  async function requestLoginOtp(targetDigits?: string) {
     error = '';
     const digits = (targetDigits ?? loginPhoneDigits).trim();
-    if (!digits || digits.replace(/\D/g, '').length < 10) {
+    const clean = digits.replace(/\D/g, '');
+    if (!clean || clean.length < 10) {
       error = 'Please enter a valid 10-digit mobile number.';
       return;
     }
 
-    const mobileToUse = normalizeMobile(digits);
+    loginPhoneDigits = clean.slice(-10);
+    const mobileToUse = normalizeMobile(loginPhoneDigits);
     loading = true;
 
     try {
-      try {
-        await api.requestOtp({ mobile: mobileToUse });
-      } catch {
-        /* proceed directly to verify */
+      const res = await api.requestOtp({ mobile: mobileToUse });
+      maskedPhone = res.mobile_masked;
+      loginStep = 'otp';
+      if (API_MODE === 'mock') {
+        enteredOtp = '123456';
+      } else {
+        enteredOtp = '';
       }
+    } catch (err) {
+      error = toMessage(err);
+    } finally {
+      loading = false;
+    }
+  }
 
-      const res = await api.verifyOtp({ mobile: mobileToUse, otp: '123456' });
+  // Step 2: Verify OTP
+  async function verifyLoginOtp() {
+    error = '';
+    const cleanOtp = enteredOtp.trim();
+    if (!cleanOtp) {
+      error = 'Please enter the 6-digit verification code.';
+      return;
+    }
+
+    const mobileToUse = normalizeMobile(loginPhoneDigits);
+    loading = true;
+
+    try {
+      const res = await api.verifyOtp({ mobile: mobileToUse, otp: cleanOtp });
       const me = await completeLogin(res);
 
       if (me?.role === 'OPERATOR') {
         await goto('/operator/dashboard');
       } else if (me && !me.profile_complete) {
-        // Switch to registration form prefilled with this number
         mode = 'register';
-        regPhoneDigits = digits.replace(/^\+91/, '');
+        regPhoneDigits = loginPhoneDigits;
+        loginStep = 'phone';
       } else {
         await goto('/dashboard');
       }
@@ -146,6 +172,44 @@
     } finally {
       loading = false;
     }
+  }
+
+  // Quick Demo profile action
+  async function handleDemoSelect(digits: string) {
+    error = '';
+    loginPhoneDigits = digits;
+
+    if (API_MODE === 'mock') {
+      // In mock mode, complete login instantly for seamless evaluation
+      loading = true;
+      try {
+        const mobileToUse = normalizeMobile(digits);
+        await api.requestOtp({ mobile: mobileToUse });
+        const res = await api.verifyOtp({ mobile: mobileToUse, otp: '123456' });
+        const me = await completeLogin(res);
+        if (me?.role === 'OPERATOR') {
+          await goto('/operator/dashboard');
+        } else if (me && !me.profile_complete) {
+          mode = 'register';
+          regPhoneDigits = digits;
+        } else {
+          await goto('/dashboard');
+        }
+      } catch (err) {
+        error = toMessage(err);
+      } finally {
+        loading = false;
+      }
+    } else {
+      // In live mode, request OTP and prompt user for code
+      await requestLoginOtp(digits);
+    }
+  }
+
+  function changeNumber() {
+    loginStep = 'phone';
+    enteredOtp = '';
+    error = '';
   }
 
   // Farmer registration
@@ -164,14 +228,16 @@
     loading = true;
 
     try {
-      // 1. Authenticate with mobile number
-      try {
-        await api.requestOtp({ mobile: mobileToUse });
-      } catch {
-        /* proceed */
+      // 1. Authenticate with mobile number if not already logged in
+      if (session.status !== 'authenticated') {
+        try {
+          await api.requestOtp({ mobile: mobileToUse });
+        } catch {
+          /* proceed */
+        }
+        const authRes = await api.verifyOtp({ mobile: mobileToUse, otp: '123456' });
+        await completeLogin(authRes);
       }
-      const authRes = await api.verifyOtp({ mobile: mobileToUse, otp: '123456' });
-      await completeLogin(authRes);
 
       // 2. Save farmer profile details
       await api.updateFarmer({
@@ -269,60 +335,113 @@
 
       <!-- TAB 1: LOGIN -->
       {#if mode === 'login'}
-        <form class="auth-form" onsubmit={(e) => { e.preventDefault(); handleLogin(); }}>
-          <div class="field-group">
-            <div class="field-label-row">
-              <label class="field-label" for="login-mobile">
-                Mobile Number
-              </label>
-              <span class="direct-badge">
-                <svg viewBox="0 0 16 16" fill="currentColor" class="badge-icon">
-                  <path fill-rule="evenodd" d="M12.416 3.376a.75.75 0 01.208 1.04l-5 7.5a.75.75 0 01-1.154.114l-3-3a.75.75 0 011.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 011.04-.207z" clip-rule="evenodd"/>
-                </svg>
-                Direct Access (No OTP)
-              </span>
-            </div>
-
-            <div class="phone-input-box">
-              <div class="country-prefix">
-                <!-- Clean SVG Indian Flag -->
-                <svg class="flag-svg" viewBox="0 0 36 24" width="22" height="15">
-                  <rect width="36" height="8" fill="#FF9933"/>
-                  <rect y="8" width="36" height="8" fill="#FFFFFF"/>
-                  <rect y="16" width="36" height="8" fill="#138808"/>
-                  <circle cx="18" cy="12" r="3.2" fill="none" stroke="#000080" stroke-width="0.8"/>
-                  <circle cx="18" cy="12" r="0.8" fill="#000080"/>
-                </svg>
-                <span class="prefix-number">+91</span>
-                <span class="prefix-divider"></span>
+        {#if loginStep === 'phone'}
+          <form class="auth-form" onsubmit={(e) => { e.preventDefault(); requestLoginOtp(); }}>
+            <div class="field-group">
+              <div class="field-label-row">
+                <label class="field-label" for="login-mobile">
+                  {t('login.mobile')}
+                </label>
+                <span class="direct-badge">
+                  <svg viewBox="0 0 16 16" fill="currentColor" class="badge-icon">
+                    <path fill-rule="evenodd" d="M12.416 3.376a.75.75 0 01.208 1.04l-5 7.5a.75.75 0 01-1.154.114l-3-3a.75.75 0 011.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 011.04-.207z" clip-rule="evenodd"/>
+                  </svg>
+                  2-Step OTP Verification
+                </span>
               </div>
-              <input
-                id="login-mobile"
-                class="phone-input"
-                type="tel"
-                inputmode="numeric"
-                autocomplete="tel"
-                bind:value={loginPhoneDigits}
-                placeholder="98765 43210"
-                required
-                maxlength="14"
-              />
-            </div>
-            <p class="field-help">Enter your 10-digit registered mobile number to proceed directly</p>
-          </div>
 
-          <button class="btn-primary" type="submit" disabled={loading}>
-            {#if loading}
-              <span class="spinner-icon"></span>
-              <span>Signing In...</span>
-            {:else}
-              <span>Sign In with Mobile</span>
-              <svg class="btn-arrow" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/>
-              </svg>
-            {/if}
-          </button>
-        </form>
+              <div class="phone-input-box">
+                <div class="country-prefix">
+                  <!-- Clean SVG Indian Flag -->
+                  <svg class="flag-svg" viewBox="0 0 36 24" width="22" height="15">
+                    <rect width="36" height="8" fill="#FF9933"/>
+                    <rect y="8" width="36" height="8" fill="#FFFFFF"/>
+                    <rect y="16" width="36" height="8" fill="#138808"/>
+                    <circle cx="18" cy="12" r="3.2" fill="none" stroke="#000080" stroke-width="0.8"/>
+                    <circle cx="18" cy="12" r="0.8" fill="#000080"/>
+                  </svg>
+                  <span class="prefix-number">+91</span>
+                  <span class="prefix-divider"></span>
+                </div>
+                <input
+                  id="login-mobile"
+                  class="phone-input"
+                  type="tel"
+                  inputmode="numeric"
+                  autocomplete="tel"
+                  bind:value={loginPhoneDigits}
+                  placeholder="98765 43210"
+                  required
+                  maxlength="14"
+                />
+              </div>
+              <p class="field-help">{t('login.mobileHint')}</p>
+            </div>
+
+            <button class="btn-primary" type="submit" disabled={loading}>
+              {#if loading}
+                <span class="spinner-icon"></span>
+                <span>{t('common.loading')}</span>
+              {:else}
+                <span>{t('login.sendOtp')}</span>
+                <svg class="btn-arrow" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                </svg>
+              {/if}
+            </button>
+          </form>
+        {:else}
+          <!-- Step 2: OTP Entry -->
+          <form class="auth-form" onsubmit={(e) => { e.preventDefault(); verifyLoginOtp(); }}>
+            <div class="field-group">
+              <div class="otp-sent-banner">
+                <span class="otp-sent-icon">📱</span>
+                <div>
+                  <span class="otp-sent-title">{t('login.sentTo')}</span>
+                  <span class="otp-sent-target">{maskedPhone || normalizeMobile(loginPhoneDigits)}</span>
+                </div>
+              </div>
+
+              <label class="field-label" for="login-otp">
+                {t('login.otp')}
+              </label>
+
+              <input
+                id="login-otp"
+                class="form-input otp-input"
+                type="text"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                bind:value={enteredOtp}
+                placeholder="123456"
+                maxlength="8"
+                required
+              />
+              <p class="field-help">{t('login.otpHint')}</p>
+            </div>
+
+            <button class="btn-primary" type="submit" disabled={loading}>
+              {#if loading}
+                <span class="spinner-icon"></span>
+                <span>{t('common.loading')}</span>
+              {:else}
+                <span>{t('login.verify')}</span>
+                <svg class="btn-arrow" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                </svg>
+              {/if}
+            </button>
+
+            <div class="otp-action-row">
+              <button type="button" class="link-btn" onclick={changeNumber} disabled={loading}>
+                ← {t('login.changeNumber')}
+              </button>
+              <button type="button" class="link-btn" onclick={() => requestLoginOtp()} disabled={loading}>
+                ↻ {t('login.resend')}
+              </button>
+            </div>
+          </form>
+        {/if}
 
         <!-- Quick Demo Profiles for Testing / Hackathon Judges -->
         <div class="demo-section">
@@ -340,7 +459,7 @@
               <button
                 type="button"
                 class="demo-card"
-                onclick={() => handleLogin(d.mobileDigits)}
+                onclick={() => handleDemoSelect(d.mobileDigits)}
                 disabled={loading}
               >
                 <div class="demo-avatar">
@@ -544,7 +663,7 @@
     min-height: 100dvh;
     display: flex;
     flex-direction: column;
-    background: radial-gradient(circle at 50% -10%, #dcfce7 0%, #f7f8f5 55%);
+    background: #f7f8f5;
     color: var(--color-text);
   }
 
@@ -598,7 +717,7 @@
   }
 
   .brand-subtext {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
     color: var(--color-muted);
     letter-spacing: 0.02em;
@@ -657,11 +776,11 @@
     background: #ecfdf3;
     border: 1px solid #bbf7d0;
     color: #166534;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    padding: 3px 10px;
+    padding: 4px 10px;
     border-radius: 12px;
   }
 
@@ -682,7 +801,7 @@
   }
 
   .auth-subtitle {
-    font-size: 13.5px;
+    font-size: 14px;
     color: var(--color-muted);
     margin: 0;
     line-height: 1.45;
@@ -704,7 +823,7 @@
     background: transparent;
     padding: 10px 14px;
     border-radius: 9px;
-    font-size: 13.5px;
+    font-size: 14px;
     font-weight: 600;
     color: var(--color-muted);
     cursor: pointer;
@@ -744,7 +863,7 @@
   }
 
   .form-section-title {
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -767,7 +886,7 @@
   }
 
   .field-label {
-    font-size: 13.5px;
+    font-size: 14px;
     font-weight: 600;
     color: #243329;
   }
@@ -776,7 +895,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     color: #15803d;
     background: #ecfdf3;
@@ -791,7 +910,7 @@
   }
 
   .optional-tag {
-    font-size: 11.5px;
+    font-size: 12px;
     color: var(--color-muted);
     font-weight: 500;
   }
@@ -855,6 +974,67 @@
     letter-spacing: 0;
   }
 
+  /* OTP Screen Specifics */
+  .otp-sent-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    padding: 12px 14px;
+    border-radius: 10px;
+    margin-bottom: 4px;
+  }
+
+  .otp-sent-icon {
+    font-size: 24px;
+  }
+
+  .otp-sent-title {
+    display: block;
+    font-size: 12px;
+    color: var(--color-muted);
+    font-weight: 500;
+  }
+
+  .otp-sent-target {
+    display: block;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--color-primary-dark);
+  }
+
+  .otp-input {
+    font-size: 20px !important;
+    letter-spacing: 0.3em;
+    text-align: center;
+    font-weight: 700;
+  }
+
+  .otp-action-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 4px;
+  }
+
+  .link-btn {
+    border: none;
+    background: transparent;
+    color: var(--color-primary);
+    font-weight: 600;
+    font-size: 13.5px;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+    transition: background-color 0.15s ease;
+  }
+
+  .link-btn:hover:not(:disabled) {
+    background: #ecfdf3;
+    text-decoration: underline;
+  }
+
   /* Standard Inputs & Selects */
   .form-input,
   .form-select {
@@ -877,7 +1057,7 @@
   }
 
   .field-help {
-    font-size: 11.5px;
+    font-size: 12px;
     color: var(--color-muted);
     margin: 0;
     line-height: 1.35;
@@ -908,7 +1088,7 @@
     align-items: flex-start;
     gap: 10px;
     cursor: pointer;
-    font-size: 12.5px;
+    font-size: 13px;
     color: #3b4840;
     line-height: 1.45;
     user-select: none;
@@ -1006,7 +1186,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 12.5px;
+    font-size: 13px;
     font-weight: 700;
     color: #1e3a29;
   }
@@ -1016,17 +1196,17 @@
   }
 
   .demo-badge {
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 600;
     color: #15803d;
     background: #ecfdf3;
     border: 1px solid #bbf7d0;
-    padding: 1px 7px;
+    padding: 2px 8px;
     border-radius: 8px;
   }
 
   .demo-subtext {
-    font-size: 12px;
+    font-size: 12.5px;
     color: var(--color-muted);
     margin: 0;
     line-height: 1.35;
@@ -1085,13 +1265,13 @@
   }
 
   .demo-name {
-    font-size: 13.5px;
+    font-size: 14px;
     font-weight: 700;
     color: var(--color-text);
   }
 
   .demo-chip {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     padding: 1px 6px;
     border-radius: 5px;
@@ -1110,7 +1290,7 @@
   }
 
   .demo-detail {
-    font-size: 11.5px;
+    font-size: 12px;
     color: var(--color-muted);
     white-space: nowrap;
     overflow: hidden;
@@ -1122,7 +1302,7 @@
   }
 
   .demo-login-btn {
-    font-size: 12px;
+    font-size: 12.5px;
     font-weight: 600;
     color: var(--color-primary);
     background: #ecfdf3;
@@ -1146,7 +1326,7 @@
   }
 
   .footer-prompt {
-    font-size: 12.5px;
+    font-size: 13px;
     color: var(--color-muted);
   }
 
@@ -1155,7 +1335,7 @@
     background: transparent;
     color: var(--color-primary);
     font-weight: 700;
-    font-size: 13.5px;
+    font-size: 14px;
     cursor: pointer;
     padding: 3px 6px;
     border-radius: 6px;
@@ -1175,7 +1355,7 @@
     gap: 10px;
     padding-top: 12px;
     border-top: 1px solid #edf0ee;
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 500;
     color: #64746a;
     flex-wrap: wrap;
@@ -1188,7 +1368,7 @@
   }
 
   .trust-icon {
-    font-size: 13px;
+    font-size: 14px;
   }
 
   .trust-dot {

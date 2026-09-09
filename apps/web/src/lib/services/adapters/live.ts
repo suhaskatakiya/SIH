@@ -80,7 +80,11 @@ export function createLiveClient(baseUrl: string): ApiClient {
         body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined
       });
     } catch {
-      throw new ApiClientError(0, 'NETWORK_ERROR', 'Could not reach the server.');
+      throw new ApiClientError(
+        0,
+        'NETWORK_ERROR',
+        `Could not reach API server at ${base}. Please make sure 'pnpm api:serve' is running.`
+      );
     }
 
     if (res.status === 204) return undefined as T;

@@ -79,7 +79,7 @@ as $$
 declare
   v_centres json;
 begin
-  perform public.require_farmer_uid();
+  if auth.uid() is null then perform public.app_error('UNAUTHENTICATED'); end if;
 
   -- No active rate for this commodity → no centres offer it (matches mock).
   if not exists (
@@ -122,7 +122,7 @@ as $$
 declare
   v_slots json;
 begin
-  perform public.require_farmer_uid();
+  if auth.uid() is null then perform public.app_error('UNAUTHENTICATED'); end if;
   if not exists (select 1 from public.centres where id = p_centre) then
     perform public.app_error('CENTRE_NOT_FOUND');
   end if;

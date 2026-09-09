@@ -8,7 +8,8 @@
   const items = [
     { href: '/operator/dashboard', key: 'op.dashboard' },
     { href: '/operator/slots', key: 'op.slots' },
-    { href: '/operator/queue', key: 'op.queue' }
+    { href: '/operator/queue', key: 'op.queue' },
+    { href: '/operator/procurement', key: 'op.procurement' }
   ];
 
   async function onLogout() {

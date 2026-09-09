@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter @cropsaathi/contracts build && pnpm --filter @cropsaathi/web dev",
+    "dev:all": "node scripts/dev-all.mjs",
     "build": "pnpm --filter @cropsaathi/contracts build && pnpm --filter @cropsaathi/web build",
     "check": "pnpm --filter @cropsaathi/contracts build && pnpm --filter @cropsaathi/web check",
     "test": "pnpm --filter @cropsaathi/contracts test",
