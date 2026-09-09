@@ -65,6 +65,7 @@
         <div class="kv"><span class="kv__k">{t('label.date')}</span><span class="kv__v">{formatDate(b.slot_date)}</span></div>
         <div class="kv"><span class="kv__k">{t('label.slot')}</span><span class="kv__v">{formatTimeRange(b.slot_start, b.slot_end)}</span></div>
       </div>
+      <a class="btn btn--secondary btn--block" href="/book">+ Book Another Slot</a>
     </div>
 
     {#if data.active_queue}

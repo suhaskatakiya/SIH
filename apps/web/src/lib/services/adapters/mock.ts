@@ -682,11 +682,11 @@ export function createMockClient(): ApiClient {
       if (slot.booked_count >= slot.capacity) fail(ERROR_CODES.SLOT_FULL, 'This slot is full.');
 
       const activeStatuses: BookingStatus[] = ['BOOKED', 'CHECKED_IN', 'IN_QUEUE', 'IN_SERVICE'];
-      const hasActive = db.bookings.some(
-        (b) => b.farmer_id === u.id && activeStatuses.includes(b.status)
+      const alreadyBookedSlot = db.bookings.some(
+        (b) => b.farmer_id === u.id && b.slot_id === slot.id && activeStatuses.includes(b.status)
       );
-      if (hasActive) {
-        fail(ERROR_CODES.DUPLICATE_ACTIVE_BOOKING, 'You already have an active booking.');
+      if (alreadyBookedSlot) {
+        fail(ERROR_CODES.DUPLICATE_ACTIVE_BOOKING, 'You have already booked this specific time slot.');
       }
 
       const centre = centreById(slot.centre_id);

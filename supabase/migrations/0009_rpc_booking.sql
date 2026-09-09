@@ -63,10 +63,11 @@ begin
   if not s.active then perform public.app_error('SLOT_FULL'); end if;
   if s.booked_count >= s.capacity then perform public.app_error('SLOT_FULL'); end if;
 
-  -- One active booking per farmer at a time.
+  -- Prevent duplicate booking for the exact same slot by the same farmer.
   if exists (
     select 1 from public.bookings
     where farmer_id = v_farmer
+      and slot_id = s.id
       and status in ('BOOKED', 'CHECKED_IN', 'IN_QUEUE', 'IN_SERVICE')
   ) then
     perform public.app_error('DUPLICATE_ACTIVE_BOOKING');
