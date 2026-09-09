@@ -33,8 +33,8 @@
       </div>
 
       <div class="stack">
-        <a class="btn btn--primary btn--block" href="/login">{t('landing.cta')}</a>
-        <a class="btn btn--ghost btn--block" href="/login">{t('landing.operator')}</a>
+        <a class="btn btn--primary btn--block" href="/login?role=farmer">{t('landing.cta')}</a>
+        <a class="btn btn--ghost btn--block" href="/login?role=operator">{t('landing.operator')}</a>
       </div>
 
       {#if API_MODE === 'mock'}

@@ -273,16 +273,13 @@ app.post('/auth/otp/verify', async (c) => {
     if (createRes.data?.user) {
       userId = createRes.data.user.id;
     } else {
-      // If user already exists in auth.users, retrieve user
-      const { data: usersData } = await admin.auth.admin.listUsers();
-      const match = usersData?.users?.find(u => u.phone === cleanMobile || u.email === internalEmail);
-      if (match) {
-        userId = match.id;
-        await admin.auth.admin.updateUserById(userId, {
-          email: internalEmail,
-          password: internalPassword,
-          email_confirm: true
-        });
+      // If user already exists in auth.users, try direct sign-in to get userId
+      const signCheck = await anon.auth.signInWithPassword({
+        email: internalEmail,
+        password: internalPassword
+      });
+      if (signCheck.data?.user) {
+        userId = signCheck.data.user.id;
       } else {
         console.error('[CreateUser error]', createRes.error);
         return fail(c, C.ERROR_CODES.INTERNAL_ERROR, 'Could not authenticate user.');
@@ -301,10 +298,24 @@ app.post('/auth/otp/verify', async (c) => {
   }
 
   // 3. Authenticate with Supabase to mint real JWT session tokens
-  const signRes = await anon.auth.signInWithPassword({
+  let signRes = await anon.auth.signInWithPassword({
     email: internalEmail,
     password: internalPassword
   });
+
+  if ((signRes.error || !signRes.data?.session) && userId) {
+    try {
+      await admin.auth.admin.updateUserById(userId, {
+        email: internalEmail,
+        password: internalPassword,
+        email_confirm: true
+      });
+      signRes = await anon.auth.signInWithPassword({
+        email: internalEmail,
+        password: internalPassword
+      });
+    } catch {}
+  }
 
   if (signRes.error || !signRes.data?.session) {
     console.error('[SignIn error]', signRes.error);
@@ -326,6 +337,122 @@ app.post('/auth/otp/verify', async (c) => {
       id: userId,
       role: profile?.role ?? 'FARMER',
       profile_complete: profile?.profile_complete ?? false
+    }
+  });
+});
+
+app.post('/auth/operator/register', async (c) => {
+  let body;
+  try { body = await c.req.json(); } catch {
+    return fail(c, C.ERROR_CODES.VALIDATION_ERROR, 'Invalid JSON body.');
+  }
+  const { mobile, fullName, centreId } = body;
+  if (!mobile || !fullName) {
+    return fail(c, C.ERROR_CODES.VALIDATION_ERROR, 'Mobile and Full Name are required.');
+  }
+
+  const admin = getAdminClient();
+  const anon = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  let cleanMobile = mobile.replace(/\s+/g, '').replace(/-/g, '');
+  if (!cleanMobile.startsWith('+')) cleanMobile = '+' + cleanMobile;
+  const digits = cleanMobile.replace(/\D/g, '');
+  const internalEmail = `op_${digits}@cropsaathi.gov.in`;
+  const internalPassword = `CropSaathiOp_${digits}_2026!`;
+
+  let userId = null;
+  const { data: existingProfile } = await admin
+    .from('profiles')
+    .select('id')
+    .eq('mobile_e164', cleanMobile)
+    .maybeSingle();
+
+  if (existingProfile) {
+    userId = existingProfile.id;
+    try {
+      await admin.auth.admin.updateUserById(userId, {
+        email: internalEmail,
+        password: internalPassword,
+        email_confirm: true
+      });
+    } catch {}
+  } else {
+    const createRes = await admin.auth.admin.createUser({
+      email: internalEmail,
+      password: internalPassword,
+      phone: cleanMobile,
+      email_confirm: true,
+      phone_confirm: true
+    });
+    if (createRes.data?.user) {
+      userId = createRes.data.user.id;
+    } else {
+      // User might already exist in auth.users
+      const signCheck = await anon.auth.signInWithPassword({
+        email: internalEmail,
+        password: internalPassword
+      });
+      if (signCheck.data?.user) {
+        userId = signCheck.data.user.id;
+      }
+    }
+  }
+
+  if (!userId) {
+    const { data: pCheck } = await admin.from('profiles').select('id').eq('mobile_e164', cleanMobile).maybeSingle();
+    if (pCheck) userId = pCheck.id;
+  }
+
+  if (!userId) {
+    return fail(c, C.ERROR_CODES.INTERNAL_ERROR, 'Could not create or locate operator account.');
+  }
+
+  // Update profile to OPERATOR
+  await admin.from('profiles').upsert({
+    id: userId,
+    mobile_e164: cleanMobile,
+    role: 'OPERATOR',
+    profile_complete: true
+  }, { onConflict: 'id' });
+
+  // Link to centre (fallback to first centre if none provided)
+  const targetCentre = centreId || '11111111-1111-4111-8111-111111111111';
+  await admin.from('operator_centres').upsert({
+    operator_user_id: userId,
+    centre_id: targetCentre
+  }, { onConflict: 'operator_user_id,centre_id' });
+
+  // Sign in to mint JWT
+  let signRes = await anon.auth.signInWithPassword({
+    email: internalEmail,
+    password: internalPassword
+  });
+
+  if ((signRes.error || !signRes.data?.session) && userId) {
+    await admin.auth.admin.updateUserById(userId, {
+      email: internalEmail,
+      password: internalPassword,
+      email_confirm: true
+    });
+    signRes = await anon.auth.signInWithPassword({
+      email: internalEmail,
+      password: internalPassword
+    });
+  }
+
+  if (signRes.error || !signRes.data?.session) {
+    console.error('[Operator SignIn error]', signRes.error);
+    return fail(c, C.ERROR_CODES.INTERNAL_ERROR, 'Failed to sign in operator.');
+  }
+
+  return c.json({
+    access_token: signRes.data.session.access_token,
+    refresh_token: signRes.data.session.refresh_token,
+    expires_in_seconds: signRes.data.session.expires_in,
+    user: {
+      id: userId,
+      role: 'OPERATOR',
+      profile_complete: true
     }
   });
 });

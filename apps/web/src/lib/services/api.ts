@@ -86,6 +86,13 @@ export interface ApiClient {
   // A. Authentication
   requestOtp(body: OtpRequestBody): Promise<OtpRequestResponse>;
   verifyOtp(body: OtpVerifyBody): Promise<OtpVerifyResponse>;
+  registerOperator?(body: {
+    mobile: string;
+    fullName: string;
+    centreId?: string;
+    badgeId?: string;
+    department?: string;
+  }): Promise<OtpVerifyResponse>;
   logout(): Promise<void>;
 
   // B. Profile / registration

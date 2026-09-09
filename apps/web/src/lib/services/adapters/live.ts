@@ -123,6 +123,8 @@ export function createLiveClient(baseUrl: string): ApiClient {
       request<OtpRequestResponse>('POST', ROUTES.authOtpRequest, { body, auth: false }),
     verifyOtp: (body: OtpVerifyBody) =>
       request<OtpVerifyResponse>('POST', ROUTES.authOtpVerify, { body, auth: false }),
+    registerOperator: (body: { mobile: string; fullName: string; centreId?: string; badgeId?: string; department?: string }) =>
+      request<OtpVerifyResponse>('POST', '/auth/operator/register', { body, auth: false }),
     async logout() {
       try {
         await request<void>('POST', ROUTES.authLogout, { body: {} });

@@ -528,6 +528,38 @@ export function createMockClient(): ApiClient {
       };
     },
 
+    async registerOperator(body: {
+      mobile: string;
+      fullName: string;
+      centreId?: string;
+      badgeId?: string;
+      department?: string;
+    }): Promise<OtpVerifyResponse> {
+      let user = db.users.find((u) => u.mobile === body.mobile);
+      if (!user) {
+        user = { id: uuid(), mobile: body.mobile, role: 'OPERATOR', profile_complete: true };
+        db.users.push(user);
+      } else {
+        user.role = 'OPERATOR';
+        user.profile_complete = true;
+      }
+      const targetCentre = body.centreId || CENTRE_1;
+      const existingLink = db.operatorCentres.find((l) => l.user_id === user.id);
+      if (!existingLink) {
+        db.operatorCentres.push({ user_id: user.id, centre_id: targetCentre });
+      } else {
+        existingLink.centre_id = targetCentre;
+      }
+      persist();
+      token = `mock.${user.id}`;
+      return {
+        access_token: token,
+        refresh_token: `mockrefresh.${user.id}`,
+        expires_in_seconds: 3600,
+        user: { id: user.id, role: 'OPERATOR', profile_complete: true }
+      };
+    },
+
     async logout(): Promise<void> {
       token = null;
     },

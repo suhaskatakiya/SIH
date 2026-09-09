@@ -4,9 +4,12 @@
   import { page } from '$app/stores';
   import { api, API_MODE, isApiClientError } from '$lib/services';
   import { completeLogin, refreshMe, session } from '$lib/session.svelte';
-  import { t, errorMessage, setLang } from '$lib/i18n.svelte';
+  import { t, errorMessage, setLang, i18n } from '$lib/i18n.svelte';
   import ErrorBanner from '$lib/components/ErrorBanner.svelte';
   import LanguageToggle from '$lib/components/LanguageToggle.svelte';
+
+  // Role: 'farmer' | 'operator'
+  let role = $state<'farmer' | 'operator'>('farmer');
 
   // State: Tab toggle ('login' | 'register')
   let mode = $state<'login' | 'register'>('login');
@@ -17,7 +20,7 @@
   let enteredOtp = $state('');
   let maskedPhone = $state('');
 
-  // Registration form fields
+  // Farmer Registration form fields
   let regPhoneDigits = $state('');
   let fullName = $state('');
   let stateCode = $state('GJ');
@@ -26,6 +29,14 @@
   let externalRef = $state('');
   let preferredLang = $state('hi');
   let privacy = $state(true);
+
+  // Operator Registration form fields
+  let regOpMobile = $state('9999900002');
+  let regOpName = $state('');
+  let regOpBadge = $state('');
+  let regOpCentre = $state('11111111-1111-4111-8111-111111111111');
+  let regOpDept = $state('APMC Mandi Committee');
+  let opAuthAck = $state(true);
 
   // Common UI state
   let loading = $state(false);
@@ -48,6 +59,19 @@
     ['hi', 'हिंदी (Hindi)'],
     ['en', 'English'],
     ['gu', 'ગુજરાતી (Gujarati)']
+  ];
+
+  const OPERATOR_CENTRES = [
+    { id: '11111111-1111-4111-8111-111111111111', name: 'SIH Demo Procurement Centre 01 (Gandhinagar / Rajkot, GJ)' },
+    { id: '22222222-1111-4111-8111-111111111111', name: 'APMC Market Yard Sector 11 (Gandhinagar, GJ)' },
+    { id: '33333333-1111-4111-8111-111111111111', name: 'Kharif Procurement Hub 03 (Ahmedabad, GJ)' }
+  ];
+
+  const OPERATOR_DEPTS = [
+    'APMC Mandi Committee',
+    'State Civil Supplies Corporation (FCI)',
+    'National Agricultural Co-op Marketing Federation (NAFED)',
+    'State Warehousing & Procurement Board'
   ];
 
   const demoLogins = [
@@ -77,7 +101,20 @@
     }
   ];
 
+  const filteredDemos = $derived(
+    demoLogins.filter((d) => (role === 'farmer' ? d.role === 'Farmer' : d.role === 'Operator'))
+  );
+
   onMount(() => {
+    const roleParam = $page.url.searchParams.get('role');
+    if (roleParam === 'operator') {
+      role = 'operator';
+      loginPhoneDigits = '9999900001';
+    } else if (roleParam === 'farmer') {
+      role = 'farmer';
+      loginPhoneDigits = '9876543210';
+    }
+
     const tabParam = $page.url.searchParams.get('tab');
     if (tabParam === 'register') {
       mode = 'register';
@@ -88,11 +125,25 @@
     }
   });
 
+  function switchRole(newRole: 'farmer' | 'operator') {
+    if (role === newRole) return;
+    role = newRole;
+    error = '';
+    loginStep = 'phone';
+    enteredOtp = '';
+    if (newRole === 'farmer') {
+      loginPhoneDigits = '9876543210';
+    } else {
+      loginPhoneDigits = '9999900001';
+    }
+  }
+
   function redirectHome() {
     if (session.me?.role === 'OPERATOR') {
       goto('/operator/dashboard');
     } else if (session.me && !session.me.profile_complete) {
       mode = 'register';
+      role = 'farmer';
       regPhoneDigits = loginPhoneDigits;
     } else {
       goto('/dashboard');
@@ -160,8 +211,19 @@
 
       if (me?.role === 'OPERATOR') {
         await goto('/operator/dashboard');
+      } else if (role === 'operator') {
+        // If logged in under operator role, ensure operator desk access
+        if (api.registerOperator) {
+          const opRes = await api.registerOperator({
+            mobile: mobileToUse,
+            fullName: 'Mandi Procurement Officer'
+          });
+          await completeLogin(opRes);
+        }
+        await goto('/operator/dashboard');
       } else if (me && !me.profile_complete) {
         mode = 'register';
+        role = 'farmer';
         regPhoneDigits = loginPhoneDigits;
         loginStep = 'phone';
       } else {
@@ -175,12 +237,16 @@
   }
 
   // Quick Demo profile action
-  async function handleDemoSelect(digits: string) {
+  async function handleDemoSelect(digits: string, demoRole: string) {
     error = '';
     loginPhoneDigits = digits;
+    if (demoRole === 'Operator') {
+      role = 'operator';
+    } else {
+      role = 'farmer';
+    }
 
     if (API_MODE === 'mock') {
-      // In mock mode, complete login instantly for seamless evaluation
       loading = true;
       try {
         const mobileToUse = normalizeMobile(digits);
@@ -191,6 +257,7 @@
           await goto('/operator/dashboard');
         } else if (me && !me.profile_complete) {
           mode = 'register';
+          role = 'farmer';
           regPhoneDigits = digits;
         } else {
           await goto('/dashboard');
@@ -201,7 +268,6 @@
         loading = false;
       }
     } else {
-      // In live mode, request OTP and prompt user for code
       await requestLoginOtp(digits);
     }
   }
@@ -213,7 +279,7 @@
   }
 
   // Farmer registration
-  async function handleRegister() {
+  async function handleFarmerRegister() {
     error = '';
     if (!privacy) {
       error = errorMessage('PRIVACY_ACK_REQUIRED', 'Please acknowledge the privacy terms to continue.');
@@ -228,18 +294,14 @@
     loading = true;
 
     try {
-      // 1. Authenticate with mobile number if not already logged in
       if (session.status !== 'authenticated') {
         try {
           await api.requestOtp({ mobile: mobileToUse });
-        } catch {
-          /* proceed */
-        }
+        } catch {}
         const authRes = await api.verifyOtp({ mobile: mobileToUse, otp: '123456' });
         await completeLogin(authRes);
       }
 
-      // 2. Save farmer profile details
       await api.updateFarmer({
         full_name: fullName.trim(),
         state_code: stateCode,
@@ -259,18 +321,57 @@
       loading = false;
     }
   }
+
+  // Operator registration
+  async function handleOperatorRegister() {
+    error = '';
+    if (!opAuthAck) {
+      error = 'Please certify that you are authorized to operate this procurement desk.';
+      return;
+    }
+    if (!regOpName.trim() || !regOpMobile.trim()) {
+      error = 'Please enter your Full Name and Mobile Number.';
+      return;
+    }
+
+    const mobileToUse = normalizeMobile(regOpMobile);
+    loading = true;
+
+    try {
+      if (api.registerOperator) {
+        const res = await api.registerOperator({
+          mobile: mobileToUse,
+          fullName: regOpName.trim(),
+          centreId: regOpCentre,
+          badgeId: regOpBadge.trim() || undefined,
+          department: regOpDept
+        });
+        await completeLogin(res);
+        await goto('/operator/dashboard');
+      } else {
+        await api.requestOtp({ mobile: mobileToUse });
+        const res = await api.verifyOtp({ mobile: mobileToUse, otp: '123456' });
+        await completeLogin(res);
+        await goto('/operator/dashboard');
+      }
+    } catch (err) {
+      error = toMessage(err);
+    } finally {
+      loading = false;
+    }
+  }
 </script>
 
 <div class="auth-page">
   <!-- Top navigation bar -->
   <header class="auth-header">
     <a class="brand-link" href="/">
-      <div class="brand-badge-wrapper">
-        <span class="brand-badge">🌾</span>
+      <div class="brand-badge-wrapper" class:brand-badge-wrapper--op={role === 'operator'}>
+        <span class="brand-badge">{role === 'farmer' ? '🌾' : '🏢'}</span>
       </div>
       <div class="brand-info">
         <span class="brand-text">CropSaathi</span>
-        <span class="brand-subtext">Procurement Portal</span>
+        <span class="brand-subtext">{role === 'farmer' ? 'Farmer MSP Portal' : 'Mandi Procurement Portal'}</span>
       </div>
     </a>
     <div class="header-actions">
@@ -280,21 +381,83 @@
 
   <!-- Centered Auth Container -->
   <main class="auth-main">
-    <div class="auth-card">
+    <div class="auth-card" class:auth-card--op={role === 'operator'}>
+
+      <!-- ROLE SELECTOR: Choice Whom to Login (Farmer vs Operator) -->
+      <div class="role-selector-container">
+        <div class="role-selector-label">
+          <span>{i18n.lang === 'hi' ? 'अपनी भूमिका चुनें (Whom to Login / Register):' : 'Whom to Login / Register:'}</span>
+        </div>
+        <div class="role-selector" role="radiogroup" aria-label="Portal Role Selection">
+          <!-- 1. Farmer Option -->
+          <button
+            type="button"
+            class="role-card role-card--farmer"
+            class:role-card--active={role === 'farmer'}
+            onclick={() => switchRole('farmer')}
+            aria-checked={role === 'farmer'}
+            role="radio"
+          >
+            <div class="role-icon-box">🌾</div>
+            <div class="role-text-box">
+              <span class="role-name">{i18n.lang === 'hi' ? 'किसान (Farmer)' : 'Farmer'}</span>
+              <span class="role-summary">{i18n.lang === 'hi' ? 'स्लॉट बुक करें व टोकन' : 'Book slots & track tokens'}</span>
+            </div>
+            {#if role === 'farmer'}
+              <span class="role-badge">✓ Selected</span>
+            {/if}
+          </button>
+
+          <!-- 2. Operator Option -->
+          <button
+            type="button"
+            class="role-card role-card--operator"
+            class:role-card--active={role === 'operator'}
+            onclick={() => switchRole('operator')}
+            aria-checked={role === 'operator'}
+            role="radio"
+          >
+            <div class="role-icon-box role-icon-box--op">🏢</div>
+            <div class="role-text-box">
+              <span class="role-name">{i18n.lang === 'hi' ? 'मंडी ऑपरेटर (Operator)' : 'Mandi Operator'}</span>
+              <span class="role-summary">{i18n.lang === 'hi' ? 'खरीद डेस्क व तौल' : 'Procurement desk & weighment'}</span>
+            </div>
+            {#if role === 'operator'}
+              <span class="role-badge role-badge--op">✓ Selected</span>
+            {/if}
+          </button>
+        </div>
+      </div>
+
       <!-- Title & Subtitle -->
       <div class="card-header">
-        <div class="header-tag">
-          <span class="tag-pulse"></span>
-          <span>MSP Procurement Booking System</span>
-        </div>
-        <h1 class="auth-title">
-          {mode === 'login' ? 'Sign in to CropSaathi' : 'Farmer Registration'}
-        </h1>
-        <p class="auth-subtitle">
-          {mode === 'login'
-            ? 'Book procurement slots, view queue positions, and manage digital tokens.'
-            : 'Register your farmer profile to schedule MSP crop procurement at government centres.'}
-        </p>
+        {#if role === 'farmer'}
+          <div class="header-tag">
+            <span class="tag-pulse"></span>
+            <span>🌾 MSP Farmer Portal • किसान पोर्टल</span>
+          </div>
+          <h1 class="auth-title">
+            {mode === 'login' ? 'Farmer Sign In' : 'Farmer Registration'}
+          </h1>
+          <p class="auth-subtitle">
+            {mode === 'login'
+              ? 'Book procurement slots, view queue positions, and manage digital tokens.'
+              : 'Register your farmer profile to schedule MSP crop procurement at government centres.'}
+          </p>
+        {:else}
+          <div class="header-tag header-tag--op">
+            <span class="tag-pulse tag-pulse--op"></span>
+            <span>🏢 Mandi Procurement Desk • ऑपरेटर पोर्टल</span>
+          </div>
+          <h1 class="auth-title auth-title--op">
+            {mode === 'login' ? 'Mandi Operator Sign In' : 'Operator Desk Registration'}
+          </h1>
+          <p class="auth-subtitle">
+            {mode === 'login'
+              ? 'Access your procurement centre desk to call queue tokens, verify arrivals, and record crop weighment.'
+              : 'Enroll an authorized procurement officer or desk operator for an APMC mandi centre.'}
+          </p>
+        {/if}
       </div>
 
       <!-- Segmented Tab Switcher -->
@@ -305,25 +468,28 @@
           aria-selected={mode === 'login'}
           class="tab-btn"
           class:tab-btn--active={mode === 'login'}
+          class:tab-btn--active-op={mode === 'login' && role === 'operator'}
           onclick={() => { mode = 'login'; error = ''; }}
         >
           <svg class="tab-icon" viewBox="0 0 20 20" fill="currentColor">
             <path fill-rule="evenodd" d="M3 3a1 1 0 011 1v12a1 1 0 11-2 0V4a1 1 0 011-1zm7.707 3.293a1 1 0 010 1.414L9.414 9H17a1 1 0 110 2H9.414l1.293 1.293a1 1 0 01-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0z" clip-rule="evenodd"/>
           </svg>
-          <span>Sign In</span>
+          <span>{role === 'farmer' ? 'Sign In' : 'Operator Sign In'}</span>
         </button>
+
         <button
           type="button"
           role="tab"
           aria-selected={mode === 'register'}
           class="tab-btn"
           class:tab-btn--active={mode === 'register'}
+          class:tab-btn--active-op={mode === 'register' && role === 'operator'}
           onclick={() => { mode = 'register'; error = ''; }}
         >
           <svg class="tab-icon" viewBox="0 0 20 20" fill="currentColor">
             <path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z"/>
           </svg>
-          <span>Register New Farmer</span>
+          <span>{role === 'farmer' ? 'Register New Farmer' : 'Register Operator Desk'}</span>
         </button>
       </div>
 
@@ -333,16 +499,16 @@
         </div>
       {/if}
 
-      <!-- TAB 1: LOGIN -->
+      <!-- TAB 1: LOGIN (FARMER & OPERATOR) -->
       {#if mode === 'login'}
         {#if loginStep === 'phone'}
           <form class="auth-form" onsubmit={(e) => { e.preventDefault(); requestLoginOtp(); }}>
             <div class="field-group">
               <div class="field-label-row">
                 <label class="field-label" for="login-mobile">
-                  {t('login.mobile')}
+                  {role === 'farmer' ? t('login.mobile') : 'Operator Mobile Number'}
                 </label>
-                <span class="direct-badge">
+                <span class="direct-badge" class:direct-badge--op={role === 'operator'}>
                   <svg viewBox="0 0 16 16" fill="currentColor" class="badge-icon">
                     <path fill-rule="evenodd" d="M12.416 3.376a.75.75 0 01.208 1.04l-5 7.5a.75.75 0 01-1.154.114l-3-3a.75.75 0 011.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 011.04-.207z" clip-rule="evenodd"/>
                   </svg>
@@ -350,7 +516,7 @@
                 </span>
               </div>
 
-              <div class="phone-input-box">
+              <div class="phone-input-box" class:phone-input-box--op={role === 'operator'}>
                 <div class="country-prefix">
                   <!-- Clean SVG Indian Flag -->
                   <svg class="flag-svg" viewBox="0 0 36 24" width="22" height="15">
@@ -370,7 +536,7 @@
                   inputmode="numeric"
                   autocomplete="tel"
                   bind:value={loginPhoneDigits}
-                  placeholder="98765 43210"
+                  placeholder={role === 'farmer' ? '98765 43210' : '99999 00001'}
                   required
                   maxlength="14"
                 />
@@ -378,7 +544,7 @@
               <p class="field-help">{t('login.mobileHint')}</p>
             </div>
 
-            <button class="btn-primary" type="submit" disabled={loading}>
+            <button class="btn-primary" class:btn-primary--op={role === 'operator'} type="submit" disabled={loading}>
               {#if loading}
                 <span class="spinner-icon"></span>
                 <span>{t('common.loading')}</span>
@@ -394,7 +560,7 @@
           <!-- Step 2: OTP Entry -->
           <form class="auth-form" onsubmit={(e) => { e.preventDefault(); verifyLoginOtp(); }}>
             <div class="field-group">
-              <div class="otp-sent-banner">
+              <div class="otp-sent-banner" class:otp-sent-banner--op={role === 'operator'}>
                 <span class="otp-sent-icon">📱</span>
                 <div>
                   <span class="otp-sent-title">{t('login.sentTo')}</span>
@@ -420,7 +586,7 @@
               <p class="field-help">{t('login.otpHint')}</p>
             </div>
 
-            <button class="btn-primary" type="submit" disabled={loading}>
+            <button class="btn-primary" class:btn-primary--op={role === 'operator'} type="submit" disabled={loading}>
               {#if loading}
                 <span class="spinner-icon"></span>
                 <span>{t('common.loading')}</span>
@@ -443,26 +609,26 @@
           </form>
         {/if}
 
-        <!-- Quick Demo Profiles for Testing / Hackathon Judges -->
-        <div class="demo-section">
+        <!-- Quick Demo Profiles for Testing / Hackathon Evaluation -->
+        <div class="demo-section" class:demo-section--op={role === 'operator'}>
           <div class="demo-header">
             <div class="demo-header-title">
               <span class="demo-spark">⚡</span>
-              <span>1-Click Quick Demo Profiles</span>
+              <span>1-Click Quick Demo ({role === 'farmer' ? 'Farmer Profiles' : 'Operator Desk'})</span>
             </div>
-            <span class="demo-badge">Evaluation Ready</span>
+            <span class="demo-badge" class:demo-badge--op={role === 'operator'}>Evaluation Ready</span>
           </div>
-          <p class="demo-subtext">Click any test persona to experience their personalized dashboard:</p>
+          <p class="demo-subtext">Click any test persona to instantly access their dashboard:</p>
 
           <div class="demo-grid">
-            {#each demoLogins as d (d.mobileDigits)}
+            {#each filteredDemos as d (d.mobileDigits)}
               <button
                 type="button"
                 class="demo-card"
-                onclick={() => handleDemoSelect(d.mobileDigits)}
+                onclick={() => handleDemoSelect(d.mobileDigits, d.role)}
                 disabled={loading}
               >
-                <div class="demo-avatar">
+                <div class="demo-avatar" class:demo-avatar--op={d.role === 'Operator'}>
                   <span>{d.icon}</span>
                 </div>
                 <div class="demo-info">
@@ -481,157 +647,281 @@
         </div>
 
         <div class="switch-footer">
-          <span class="footer-prompt">Are you a new farmer visiting for the first time?</span>
-          <button type="button" class="link-action-btn" onclick={() => { mode = 'register'; error = ''; }}>
-            Register your farmer profile &rarr;
-          </button>
+          {#if role === 'farmer'}
+            <span class="footer-prompt">Are you a new farmer visiting for the first time?</span>
+            <button type="button" class="link-action-btn" onclick={() => { mode = 'register'; error = ''; }}>
+              Register your farmer profile &rarr;
+            </button>
+          {:else}
+            <span class="footer-prompt">Need to register a new operator or centre desk?</span>
+            <button type="button" class="link-action-btn link-action-btn--op" onclick={() => { mode = 'register'; error = ''; }}>
+              Register operator desk &rarr;
+            </button>
+          {/if}
         </div>
 
       <!-- TAB 2: REGISTER -->
       {:else}
-        <form class="auth-form" onsubmit={(e) => { e.preventDefault(); handleRegister(); }}>
-          <div class="form-section-title">
-            <span>1. Contact & Identity</span>
-          </div>
+        {#if role === 'farmer'}
+          <!-- Farmer Registration Form -->
+          <form class="auth-form" onsubmit={(e) => { e.preventDefault(); handleFarmerRegister(); }}>
+            <div class="form-section-title">
+              <span>1. Contact & Identity</span>
+            </div>
 
-          <div class="field-group">
-            <label class="field-label" for="reg-mobile">Mobile Number *</label>
-            <div class="phone-input-box">
-              <div class="country-prefix">
-                <svg class="flag-svg" viewBox="0 0 36 24" width="22" height="15">
-                  <rect width="36" height="8" fill="#FF9933"/>
-                  <rect y="8" width="36" height="8" fill="#FFFFFF"/>
-                  <rect y="16" width="36" height="8" fill="#138808"/>
-                  <circle cx="18" cy="12" r="3.2" fill="none" stroke="#000080" stroke-width="0.8"/>
-                  <circle cx="18" cy="12" r="0.8" fill="#000080"/>
-                </svg>
-                <span class="prefix-number">+91</span>
-                <span class="prefix-divider"></span>
+            <div class="field-group">
+              <label class="field-label" for="reg-mobile">Mobile Number *</label>
+              <div class="phone-input-box">
+                <div class="country-prefix">
+                  <svg class="flag-svg" viewBox="0 0 36 24" width="22" height="15">
+                    <rect width="36" height="8" fill="#FF9933"/>
+                    <rect y="8" width="36" height="8" fill="#FFFFFF"/>
+                    <rect y="16" width="36" height="8" fill="#138808"/>
+                    <circle cx="18" cy="12" r="3.2" fill="none" stroke="#000080" stroke-width="0.8"/>
+                    <circle cx="18" cy="12" r="0.8" fill="#000080"/>
+                  </svg>
+                  <span class="prefix-number">+91</span>
+                  <span class="prefix-divider"></span>
+                </div>
+                <input
+                  id="reg-mobile"
+                  class="phone-input"
+                  type="tel"
+                  inputmode="numeric"
+                  autocomplete="tel"
+                  bind:value={regPhoneDigits}
+                  placeholder="98765 43210"
+                  required
+                  maxlength="14"
+                />
+              </div>
+              <p class="field-help">Your mobile number will receive booking SMS confirmations</p>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="full-name">{t('register.fullName')} *</label>
+              <input
+                id="full-name"
+                class="form-input"
+                type="text"
+                bind:value={fullName}
+                placeholder="e.g. Ramesh Patel"
+                required
+                maxlength="120"
+              />
+            </div>
+
+            <div class="form-section-title">
+              <span>2. Farm Location</span>
+            </div>
+
+            <div class="grid-2col">
+              <div class="field-group">
+                <label class="field-label" for="state-code">{t('register.state')} *</label>
+                <select id="state-code" class="form-select" bind:value={stateCode}>
+                  {#each STATES as [code, name] (code)}
+                    <option value={code}>{name}</option>
+                  {/each}
+                </select>
+              </div>
+
+              <div class="field-group">
+                <label class="field-label" for="district">{t('register.district')} *</label>
+                <input
+                  id="district"
+                  class="form-input"
+                  type="text"
+                  bind:value={district}
+                  placeholder="e.g. Gandhinagar"
+                  required
+                  maxlength="120"
+                />
+              </div>
+            </div>
+
+            <div class="grid-2col">
+              <div class="field-group">
+                <label class="field-label" for="village">{t('register.village')} *</label>
+                <input
+                  id="village"
+                  class="form-input"
+                  type="text"
+                  bind:value={village}
+                  placeholder="e.g. Demo Village"
+                  required
+                  maxlength="120"
+                />
+              </div>
+
+              <div class="field-group">
+                <label class="field-label" for="preferred-lang">{t('register.language')}</label>
+                <select id="preferred-lang" class="form-select" bind:value={preferredLang}>
+                  {#each LANGS as [code, name] (code)}
+                    <option value={code}>{name}</option>
+                  {/each}
+                </select>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <div class="field-label-row">
+                <label class="field-label" for="ext-ref">Kisan / Land Reference ID</label>
+                <span class="optional-tag">Optional</span>
               </div>
               <input
-                id="reg-mobile"
-                class="phone-input"
-                type="tel"
-                inputmode="numeric"
-                autocomplete="tel"
-                bind:value={regPhoneDigits}
-                placeholder="98765 43210"
+                id="ext-ref"
+                class="form-input"
+                type="text"
+                bind:value={externalRef}
+                placeholder="e.g. GJ-GNR-004821 or PM-KISAN ID"
+                maxlength="120"
+              />
+              <p class="field-help">If you have a PM-KISAN, Krushak, or state land record number</p>
+            </div>
+
+            <div class="privacy-box">
+              <label class="privacy-label">
+                <input type="checkbox" bind:checked={privacy} class="privacy-checkbox" />
+                <span class="privacy-text">
+                  I hereby declare that the crop produce is harvested from my registered landholding and agree to terms under Government MSP procurement.
+                </span>
+              </label>
+            </div>
+
+            <button class="btn-primary" type="submit" disabled={loading}>
+              {#if loading}
+                <span class="spinner-icon"></span>
+                <span>Registering Profile...</span>
+              {:else}
+                <span>Complete Farmer Registration &rarr;</span>
+                <svg class="btn-arrow" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                </svg>
+              {/if}
+            </button>
+          </form>
+
+          <div class="switch-footer">
+            <span class="footer-prompt">Already have a farmer profile?</span>
+            <button type="button" class="link-action-btn" onclick={() => { mode = 'login'; error = ''; }}>
+              Farmer Sign In directly &rarr;
+            </button>
+          </div>
+        {:else}
+          <!-- Operator Desk Registration Form -->
+          <form class="auth-form" onsubmit={(e) => { e.preventDefault(); handleOperatorRegister(); }}>
+            <div class="form-section-title">
+              <span>1. Operator Identity & Credentials</span>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="reg-op-mobile">Official Mobile Number *</label>
+              <div class="phone-input-box phone-input-box--op">
+                <div class="country-prefix">
+                  <svg class="flag-svg" viewBox="0 0 36 24" width="22" height="15">
+                    <rect width="36" height="8" fill="#FF9933"/>
+                    <rect y="8" width="36" height="8" fill="#FFFFFF"/>
+                    <rect y="16" width="36" height="8" fill="#138808"/>
+                    <circle cx="18" cy="12" r="3.2" fill="none" stroke="#000080" stroke-width="0.8"/>
+                    <circle cx="18" cy="12" r="0.8" fill="#000080"/>
+                  </svg>
+                  <span class="prefix-number">+91</span>
+                  <span class="prefix-divider"></span>
+                </div>
+                <input
+                  id="reg-op-mobile"
+                  class="phone-input"
+                  type="tel"
+                  inputmode="numeric"
+                  autocomplete="tel"
+                  bind:value={regOpMobile}
+                  placeholder="99999 00002"
+                  required
+                  maxlength="14"
+                />
+              </div>
+              <p class="field-help">Registered official mobile for OTP authentication & token calling</p>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="reg-op-name">Officer / Operator Full Name *</label>
+              <input
+                id="reg-op-name"
+                class="form-input"
+                type="text"
+                bind:value={regOpName}
+                placeholder="e.g. Rajesh Sharma (Procurement Officer)"
                 required
-                maxlength="14"
+                maxlength="120"
               />
             </div>
-            <p class="field-help">Your mobile number will receive booking SMS confirmations</p>
-          </div>
 
-          <div class="field-group">
-            <label class="field-label" for="full-name">{t('register.fullName')} *</label>
-            <input
-              id="full-name"
-              class="form-input"
-              type="text"
-              bind:value={fullName}
-              placeholder="e.g. Ramesh Patel"
-              required
-              maxlength="120"
-            />
-          </div>
-
-          <div class="form-section-title">
-            <span>2. Farm Location</span>
-          </div>
-
-          <div class="grid-2col">
             <div class="field-group">
-              <label class="field-label" for="state-code">{t('register.state')} *</label>
-              <select id="state-code" class="form-select" bind:value={stateCode}>
-                {#each STATES as [code, name] (code)}
-                  <option value={code}>{name}</option>
+              <div class="field-label-row">
+                <label class="field-label" for="reg-op-badge">Employee / Operator Badge ID</label>
+                <span class="optional-tag">Optional</span>
+              </div>
+              <input
+                id="reg-op-badge"
+                class="form-input"
+                type="text"
+                bind:value={regOpBadge}
+                placeholder="e.g. OP-GJ-0412"
+                maxlength="60"
+              />
+            </div>
+
+            <div class="form-section-title">
+              <span>2. Procurement Centre Assignment</span>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="reg-op-centre">Assigned Procurement Centre *</label>
+              <select id="reg-op-centre" class="form-select" bind:value={regOpCentre}>
+                {#each OPERATOR_CENTRES as centre (centre.id)}
+                  <option value={centre.id}>{centre.name}</option>
                 {/each}
               </select>
             </div>
 
             <div class="field-group">
-              <label class="field-label" for="district">{t('register.district')} *</label>
-              <input
-                id="district"
-                class="form-input"
-                type="text"
-                bind:value={district}
-                placeholder="e.g. Gandhinagar"
-                required
-                maxlength="120"
-              />
-            </div>
-          </div>
-
-          <div class="grid-2col">
-            <div class="field-group">
-              <label class="field-label" for="village">{t('register.village')} *</label>
-              <input
-                id="village"
-                class="form-input"
-                type="text"
-                bind:value={village}
-                placeholder="e.g. Demo Village"
-                required
-                maxlength="120"
-              />
-            </div>
-
-            <div class="field-group">
-              <label class="field-label" for="preferred-lang">{t('register.language')}</label>
-              <select id="preferred-lang" class="form-select" bind:value={preferredLang}>
-                {#each LANGS as [code, name] (code)}
-                  <option value={code}>{name}</option>
+              <label class="field-label" for="reg-op-dept">Department / Mandi Board</label>
+              <select id="reg-op-dept" class="form-select" bind:value={regOpDept}>
+                {#each OPERATOR_DEPTS as dept}
+                  <option value={dept}>{dept}</option>
                 {/each}
               </select>
             </div>
-          </div>
 
-          <div class="field-group">
-            <div class="field-label-row">
-              <label class="field-label" for="ext-ref">Kisan / Land Reference ID</label>
-              <span class="optional-tag">Optional</span>
+            <div class="privacy-box privacy-box--op">
+              <label class="privacy-label">
+                <input type="checkbox" bind:checked={opAuthAck} class="privacy-checkbox" />
+                <span class="privacy-text">
+                  I certify that I am authorized by the Mandi Committee / State Procurement Agency to operate this procurement desk, verify farmer arrivals, and record crop weighment.
+                </span>
+              </label>
             </div>
-            <input
-              id="ext-ref"
-              class="form-input"
-              type="text"
-              bind:value={externalRef}
-              placeholder="e.g. GJ-GNR-004821 or PM-KISAN ID"
-              maxlength="120"
-            />
-            <p class="field-help">If you have a PM-KISAN, Krushak, or state land record number</p>
+
+            <button class="btn-primary btn-primary--op" type="submit" disabled={loading}>
+              {#if loading}
+                <span class="spinner-icon"></span>
+                <span>Registering Operator Desk...</span>
+              {:else}
+                <span>Register Operator Desk & Enter &rarr;</span>
+                <svg class="btn-arrow" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                </svg>
+              {/if}
+            </button>
+          </form>
+
+          <div class="switch-footer">
+            <span class="footer-prompt">Already have an operator account?</span>
+            <button type="button" class="link-action-btn link-action-btn--op" onclick={() => { mode = 'login'; error = ''; }}>
+              Operator Sign In directly &rarr;
+            </button>
           </div>
-
-          <div class="privacy-box">
-            <label class="privacy-label">
-              <input type="checkbox" bind:checked={privacy} class="privacy-checkbox" />
-              <span class="privacy-text">
-                I hereby declare that the crop produce is harvested from my registered landholding and agree to terms under Government MSP procurement.
-              </span>
-            </label>
-          </div>
-
-          <button class="btn-primary" type="submit" disabled={loading}>
-            {#if loading}
-              <span class="spinner-icon"></span>
-              <span>Registering Profile...</span>
-            {:else}
-              <span>Complete Registration & Continue</span>
-              <svg class="btn-arrow" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/>
-              </svg>
-            {/if}
-          </button>
-        </form>
-
-        <div class="switch-footer">
-          <span class="footer-prompt">Already have a farmer profile?</span>
-          <button type="button" class="link-action-btn" onclick={() => { mode = 'login'; error = ''; }}>
-            Sign In directly &rarr;
-          </button>
-        </div>
+        {/if}
       {/if}
 
       <!-- Trust Badges Footer -->
@@ -745,18 +1035,144 @@
     border-radius: 20px;
     box-shadow: 0 20px 40px -15px rgba(22, 101, 52, 0.07), 0 4px 12px -2px rgba(0, 0, 0, 0.03);
     width: 100%;
-    max-width: 520px;
+    max-width: 540px;
     padding: 32px 30px;
     display: flex;
     flex-direction: column;
     gap: 20px;
-    transition: box-shadow 0.2s ease;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+
+  .auth-card--op {
+    border-color: rgba(67, 56, 202, 0.16);
+    box-shadow: 0 20px 40px -15px rgba(67, 56, 202, 0.08), 0 4px 12px -2px rgba(0, 0, 0, 0.03);
+  }
+
+  .brand-badge-wrapper--op {
+    background: #eef2ff !important;
+    border-color: #c7d2fe !important;
+  }
+
+  /* Role Selector (Choice Whom to Login / Register) */
+  .role-selector-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #edf0ee;
+  }
+
+  .role-selector-label {
+    font-size: 11.5px;
+    font-weight: 750;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+  }
+
+  .role-selector {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .role-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 2px solid #e2e8f0;
+    background: #f8fafc;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    text-align: left;
+    position: relative;
+    user-select: none;
+  }
+
+  .role-card:hover {
+    border-color: #cbd5e1;
+    background: #ffffff;
+    transform: translateY(-1px);
+  }
+
+  .role-card--farmer.role-card--active {
+    border-color: #166534;
+    background: #f0fdf4;
+    box-shadow: 0 4px 14px rgba(22, 101, 52, 0.12);
+  }
+
+  .role-card--operator.role-card--active {
+    border-color: #4338ca;
+    background: #eef2ff;
+    box-shadow: 0 4px 14px rgba(67, 56, 202, 0.12);
+  }
+
+  .role-icon-box {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: #dcfce7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+
+  .role-icon-box--op {
+    background: #e0e7ff;
+  }
+
+  .role-text-box {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+    overflow: hidden;
+  }
+
+  .role-name {
+    font-size: 13.5px;
+    font-weight: 750;
+    color: #1e293b;
+  }
+
+  .role-summary {
+    font-size: 11px;
+    color: #64748b;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+  }
+
+  .role-badge {
+    position: absolute;
+    top: -8px;
+    right: 10px;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #166534;
+    color: #ffffff;
+    letter-spacing: 0.03em;
+    box-shadow: 0 2px 5px rgba(22, 101, 52, 0.3);
+  }
+
+  .role-badge--op {
+    background: #4338ca;
+    box-shadow: 0 2px 5px rgba(67, 56, 202, 0.3);
   }
 
   @media (max-width: 500px) {
     .auth-card {
       padding: 24px 18px;
       border-radius: 16px;
+    }
+    .role-selector {
+      grid-template-columns: 1fr;
+      gap: 8px;
     }
   }
 
@@ -784,12 +1200,23 @@
     border-radius: 12px;
   }
 
+  .header-tag--op {
+    background: #eef2ff !important;
+    border-color: #c7d2fe !important;
+    color: #4338ca !important;
+  }
+
   .tag-pulse {
     width: 6px;
     height: 6px;
     border-radius: 50%;
     background: #16a34a;
     box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.25);
+  }
+
+  .tag-pulse--op {
+    background: #4338ca !important;
+    box-shadow: 0 0 0 2px rgba(67, 56, 202, 0.25) !important;
   }
 
   .auth-title {
@@ -800,12 +1227,78 @@
     margin: 0;
   }
 
+  .auth-title--op {
+    color: #1e1b4b !important;
+  }
+
   .auth-subtitle {
     font-size: 14px;
     color: var(--color-muted);
     margin: 0;
     line-height: 1.45;
-    max-width: 420px;
+    max-width: 440px;
+  }
+
+  .tab-btn--active-op {
+    background: #ffffff !important;
+    color: #4338ca !important;
+    border-color: #c7d2fe !important;
+    box-shadow: 0 1px 3px rgba(67, 56, 202, 0.12) !important;
+  }
+
+  .direct-badge--op {
+    background: #eef2ff !important;
+    border-color: #c7d2fe !important;
+    color: #4338ca !important;
+  }
+
+  .phone-input-box--op:focus-within {
+    border-color: #4338ca !important;
+    box-shadow: 0 0 0 3px rgba(67, 56, 202, 0.12) !important;
+  }
+
+  .btn-primary--op {
+    background: #4338ca !important;
+    box-shadow: 0 4px 12px rgba(67, 56, 202, 0.25) !important;
+  }
+
+  .btn-primary--op:hover:not(:disabled) {
+    background: #3730a3 !important;
+    box-shadow: 0 8px 20px -4px rgba(67, 56, 202, 0.4) !important;
+  }
+
+  .otp-sent-banner--op {
+    background: #eef2ff !important;
+    border-color: #c7d2fe !important;
+  }
+
+  .demo-section--op {
+    border-color: #c7d2fe !important;
+    background: #f8faff !important;
+  }
+
+  .demo-badge--op {
+    background: #eef2ff !important;
+    color: #4338ca !important;
+    border-color: #c7d2fe !important;
+  }
+
+  .demo-avatar--op {
+    background: #e0e7ff !important;
+    border-color: #c7d2fe !important;
+  }
+
+  .link-action-btn--op {
+    color: #4338ca !important;
+  }
+
+  .link-action-btn--op:hover {
+    background: #eef2ff !important;
+  }
+
+  .privacy-box--op {
+    background: #f8faff !important;
+    border-left: 3px solid #4338ca !important;
   }
 
   /* Segmented Tab Switcher */
