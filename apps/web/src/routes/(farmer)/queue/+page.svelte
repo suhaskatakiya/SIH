@@ -3,7 +3,7 @@
   import type { FarmerDashboardResponse } from '@cropsaathi/contracts';
   import { api, isApiClientError } from '$lib/services';
   import { t, errorMessage } from '$lib/i18n.svelte';
-  import { formatWait, formatDateTime, formatTimeRange, formatDate, formatQuantity } from '$lib/format';
+  import { formatWait, formatDateTime, formatTimeRange, formatTimeSlotLabel, formatDate, formatQuantity } from '$lib/format';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import Spinner from '$lib/components/Spinner.svelte';
   import ErrorBanner from '$lib/components/ErrorBanner.svelte';
@@ -70,7 +70,7 @@
     <div class="slot-banner__icon">⏰</div>
     <div class="slot-banner__content">
       <span class="slot-banner__badge">YOUR BOOKED SLOT WINDOW</span>
-      <h2 class="slot-banner__time">{formatTimeRange(b.slot_start, b.slot_end)}</h2>
+      <h2 class="slot-banner__time">{formatTimeSlotLabel(b.slot_start, b.slot_end)}</h2>
       <p class="slot-banner__centre">
         📍 {b.centre_name} · {formatDate(b.slot_date)}
       </p>
@@ -166,7 +166,7 @@
     <div class="kv"><span class="kv__k">{t('label.reference')}</span><span class="kv__v">{b.reference}</span></div>
     <div class="kv"><span class="kv__k">{t('label.commodity')}</span><span class="kv__v">{b.commodity_code}</span></div>
     <div class="kv"><span class="kv__k">{t('label.quantity')}</span><span class="kv__v">{formatQuantity(b.expected_quantity_qtl)}</span></div>
-    <div class="kv"><span class="kv__k">{t('label.slot')}</span><span class="kv__v">{formatDate(b.slot_date)} · {formatTimeRange(b.slot_start, b.slot_end)}</span></div>
+    <div class="kv"><span class="kv__k">{t('label.slot')}</span><span class="kv__v">{formatDate(b.slot_date)} · {formatTimeSlotLabel(b.slot_start, b.slot_end)}</span></div>
   </div>
 {:else if data?.upcoming_booking}
   {@const b = data.upcoming_booking}

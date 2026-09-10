@@ -3,7 +3,7 @@
   import type { CentreBookingRow } from '$lib/services';
   import { api, isApiClientError } from '$lib/services';
   import { t, errorMessage } from '$lib/i18n.svelte';
-  import { formatTimeRange, formatQuantity, formatDate, todayIso, addDaysIso } from '$lib/format';
+  import { formatTimeRange, formatTimeSlotLabel, formatQuantity, formatDate, todayIso, addDaysIso } from '$lib/format';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import Spinner from '$lib/components/Spinner.svelte';
   import ErrorBanner from '$lib/components/ErrorBanner.svelte';
@@ -30,9 +30,9 @@
     notLive = false;
     try {
       const dash = await api.getOperatorDashboard();
-      centreId = dash.centre.id;
+      centreId = dash?.centre?.id || '11111111-1111-4111-8111-111111111111';
       const res = await api.listCentreBookings(centreId, date);
-      rows = res.bookings;
+      rows = res.bookings || [];
       status = 'ready';
     } catch (err) {
       if (isApiClientError(err) && err.code === 'NOT_AVAILABLE_LIVE') {
@@ -88,6 +88,10 @@
 
   let nextWaitingFarmer = $derived(
     rows.find((r) => r.queue_state === 'WAITING') ?? null
+  );
+
+  let bookedFarmersCount = $derived(
+    rows.filter((r) => r.booking_status === 'BOOKED').length
   );
 
   // Group rows by slot window
@@ -161,7 +165,7 @@
           <div class="desk-farmer-token">Token #{activeDeskFarmer.position ?? 1}</div>
           <h2 class="desk-farmer-name">{activeDeskFarmer.farmer_name}</h2>
           <div class="desk-farmer-meta">
-            <span class="meta-pill">⏰ Slot: {formatTimeRange(activeDeskFarmer.slot_start, activeDeskFarmer.slot_end)}</span>
+            <span class="meta-pill">⏰ Slot: {formatTimeSlotLabel(activeDeskFarmer.slot_start, activeDeskFarmer.slot_end)}</span>
             <span class="meta-pill">🌾 {activeDeskFarmer.commodity_code}</span>
             <span class="meta-pill">⚖️ {formatQuantity(activeDeskFarmer.expected_quantity_qtl)}</span>
             <span class="meta-pill meta-pill--muted">Ref: {activeDeskFarmer.reference}</span>
@@ -212,6 +216,8 @@
         <p class="desk-idle-text">
           {#if nextWaitingFarmer}
             Next in queue: <strong>{nextWaitingFarmer.farmer_name}</strong> (Token #{nextWaitingFarmer.position ?? 1} · {nextWaitingFarmer.commodity_code})
+          {:else if bookedFarmersCount > 0}
+            No farmers currently in waiting line. <strong>{bookedFarmersCount} farmer(s)</strong> booked today awaiting check-in below.
           {:else}
             No waiting farmers in today's queue. Desk is open for arriving farmers.
           {/if}
@@ -241,7 +247,7 @@
         <div class="slot-group-header">
           <div class="slot-group-title">
             <span class="slot-clock-icon">⏰</span>
-            <strong>{formatTimeRange(group.farmers[0]?.slot_start ?? '09:00', group.farmers[0]?.slot_end ?? '09:30')}</strong>
+            <strong>{formatTimeSlotLabel(group.farmers[0]?.slot_start ?? '09:00', group.farmers[0]?.slot_end ?? '10:00')}</strong>
             <span class="slot-count-badge">
               {group.farmers.length} {group.farmers.length === 1 ? 'Farmer' : 'Farmers'} Booked
             </span>
@@ -319,11 +325,13 @@
               <div class="farmer-item__actions">
                 {#if row.booking_status === 'BOOKED'}
                   <button
-                    class="btn btn--secondary btn--sm"
+                    class="btn btn--primary btn--sm checkin-btn"
                     onclick={() => act(row, () => api.checkIn(row.booking_id))}
                     disabled={busyId === row.booking_id}
+                    title="Check-in arriving farmer and enter into active queue"
                   >
-                    {busyId === row.booking_id ? t('common.loading') : t('op.checkIn')}
+                    <span style="font-size: 0.95rem;">📋</span>
+                    {busyId === row.booking_id ? t('common.loading') : `Check In Farmer ❯`}
                   </button>
                 {:else if row.queue_state === 'CALLED'}
                   <button
@@ -669,5 +677,18 @@
     padding: 4px 12px;
     font-size: 0.82rem;
     min-height: 32px;
+  }
+
+  .checkin-btn {
+    background: #059669 !important;
+    border-color: #059669 !important;
+    color: #ffffff !important;
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  }
+
+  .checkin-btn:hover {
+    background: #047857 !important;
+    border-color: #047857 !important;
   }
 </style>

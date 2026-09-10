@@ -132,6 +132,7 @@ export interface ApiClient {
   getOperatorSlots(query: OperatorSlotsQuery): Promise<OperatorSlotsResponse>;
   createSlot(body: CreateSlotBody): Promise<OperatorSlot>;
   patchSlot(slotId: string, body: PatchSlotBody): Promise<OperatorSlot>;
+  generateStandardSlots(date: string, capacity?: number): Promise<OperatorSlotsResponse>;
 
   // Operator queue listing (mock-only; see note above)
   listCentreBookings(centreId: string, date: string): Promise<CentreBookingsResponse>;

@@ -195,6 +195,8 @@ export function createLiveClient(baseUrl: string): ApiClient {
       request<OperatorSlot>('POST', ROUTES.operatorSlots, { body }),
     patchSlot: (slotId: string, body: PatchSlotBody) =>
       request<OperatorSlot>('PATCH', ROUTES.operatorSlot(slotId), { body }),
+    generateStandardSlots: (date: string, capacity = 10) =>
+      request<OperatorSlotsResponse>('POST', '/operator/slots/generate-standard', { body: { date, capacity } }),
 
     // Operator queue listing
     async listCentreBookings(centreId: string, date: string): Promise<CentreBookingsResponse> {

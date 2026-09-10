@@ -317,7 +317,7 @@ values (
   current_date,
   '09:00'::time,
   '10:00'::time,
-  12,
+  10,
   1,
   true
 )
@@ -327,7 +327,7 @@ on conflict (centre_id, date, start_time, end_time) do update set
 
 -- Remaining 1-hour slots for today (10 AM to 6 PM)
 insert into public.slots (centre_id, date, start_time, end_time, capacity, booked_count, active)
-select '11111111-1111-4111-8111-111111111111'::uuid, current_date, t.st::time, t.et::time, 12, 0, true
+select '11111111-1111-4111-8111-111111111111'::uuid, current_date, t.st::time, t.et::time, 10, 0, true
 from (values
   ('10:00', '11:00'),
   ('11:00', '12:00'),
@@ -342,7 +342,7 @@ on conflict (centre_id, date, start_time, end_time) do nothing;
 
 -- 1-hour slots for tomorrow (Day + 1, 9 AM to 6 PM)
 insert into public.slots (centre_id, date, start_time, end_time, capacity, booked_count, active)
-select '11111111-1111-4111-8111-111111111111'::uuid, current_date + interval '1 day', t.st::time, t.et::time, 12, 0, true
+select '11111111-1111-4111-8111-111111111111'::uuid, current_date + interval '1 day', t.st::time, t.et::time, 10, 0, true
 from (values
   ('09:00', '10:00'),
   ('10:00', '11:00'),
@@ -358,7 +358,7 @@ on conflict (centre_id, date, start_time, end_time) do nothing;
 
 -- 1-hour slots for Day + 2 (9 AM to 6 PM)
 insert into public.slots (centre_id, date, start_time, end_time, capacity, booked_count, active)
-select '11111111-1111-4111-8111-111111111111'::uuid, current_date + interval '2 days', t.st::time, t.et::time, 12, 0, true
+select '11111111-1111-4111-8111-111111111111'::uuid, current_date + interval '2 days', t.st::time, t.et::time, 10, 0, true
 from (values
   ('09:00', '10:00'),
   ('10:00', '11:00'),
@@ -379,7 +379,7 @@ select
   d.day_date,
   t.st::time,
   t.et::time,
-  15,
+  10,
   0,
   true
 from (values

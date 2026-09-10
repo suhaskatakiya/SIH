@@ -3,7 +3,7 @@
   import type { FarmerDashboardResponse } from '@cropsaathi/contracts';
   import { api, isApiClientError } from '$lib/services';
   import { t, i18n, errorMessage } from '$lib/i18n.svelte';
-  import { formatDate, formatTimeRange, formatMoney, formatWait } from '$lib/format';
+  import { formatDate, formatTimeRange, formatTimeSlotLabel, formatMoney, formatWait } from '$lib/format';
   import { formatCommodity } from '$lib/commodities';
   import { session } from '$lib/session.svelte';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
@@ -199,7 +199,7 @@
           <div class="row row--between slot-card__header">
             <div class="slot-datetime">
               <span class="slot-calendar-date">📅 {formatDate(b.slot_date)}</span>
-              <span class="slot-time-pill">⏰ {formatTimeRange(b.slot_start, b.slot_end)}</span>
+              <span class="slot-time-pill">⏰ {formatTimeSlotLabel(b.slot_start, b.slot_end)}</span>
             </div>
             <StatusBadge value={b.status} />
           </div>

@@ -1370,6 +1370,40 @@ export function createMockClient(): ApiClient {
       };
     },
 
+    async generateStandardSlots(date: string, capacity = 10): Promise<OperatorSlotsResponse> {
+      const { centreId } = requireOperator();
+      const stdSlots = [
+        ['09:00', '10:00'],
+        ['10:00', '11:00'],
+        ['11:00', '12:00'],
+        ['12:00', '13:00'],
+        ['13:00', '14:00'],
+        ['14:00', '15:00'],
+        ['15:00', '16:00'],
+        ['16:00', '17:00'],
+        ['17:00', '18:00']
+      ];
+      // Filter out slots for this date that have 0 bookings
+      db.slots = db.slots.filter((s) => !(s.centre_id === centreId && s.date === date && s.booked_count === 0));
+      for (const [st, et] of stdSlots) {
+        const existing = db.slots.find((s) => s.centre_id === centreId && s.date === date && s.start === st);
+        if (!existing) {
+          db.slots.push({
+            id: uuid(),
+            centre_id: centreId,
+            date,
+            start: st,
+            end: et,
+            capacity,
+            booked_count: 0,
+            active: true
+          });
+        }
+      }
+      persist();
+      return this.getOperatorSlots({ date });
+    },
+
     /* ---- operator queue listing (mock-only) ---- */
     async listCentreBookings(centreId: string, date: string): Promise<CentreBookingsResponse> {
       const op = requireOperator();
