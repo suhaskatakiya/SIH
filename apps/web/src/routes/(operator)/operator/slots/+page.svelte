@@ -17,8 +17,8 @@
   let slots = $state<OperatorSlot[]>([]);
 
   let newStart = $state('09:00');
-  let newEnd = $state('09:30');
-  let newCapacity = $state('5');
+  let newEnd = $state('10:00');
+  let newCapacity = $state('10');
   let creating = $state(false);
   let busyId = $state<string | null>(null);
 
@@ -79,7 +79,35 @@
 </div>
 
 <div class="card stack">
-  <span class="card__title">{t('op.addSlot')}</span>
+  <span class="card__title">{t('op.addSlot')} (1-Hour Schedule)</span>
+
+  <!-- Quick 1-Hour Presets (9 AM to 6 PM) -->
+  <div class="field">
+    <label class="field__label">Quick 1-Hour Presets (9 AM – 6 PM)</label>
+    <div class="row" style="flex-wrap: wrap; gap: var(--space-2);">
+      {#each [
+        ['09:00', '10:00', '9–10 AM'],
+        ['10:00', '11:00', '10–11 AM'],
+        ['11:00', '12:00', '11–12 PM'],
+        ['12:00', '13:00', '12–1 PM'],
+        ['13:00', '14:00', '1–2 PM'],
+        ['14:00', '15:00', '2–3 PM'],
+        ['15:00', '16:00', '3–4 PM'],
+        ['16:00', '17:00', '4–5 PM'],
+        ['17:00', '18:00', '5–6 PM']
+      ] as [st, et, lbl]}
+        <button
+          type="button"
+          class="btn {newStart === st && newEnd === et ? 'btn--primary' : 'btn--ghost'}"
+          style="padding: 4px 10px; font-size: 0.8rem; min-height: 32px;"
+          onclick={() => { newStart = st; newEnd = et; }}
+        >
+          {lbl}
+        </button>
+      {/each}
+    </div>
+  </div>
+
   <div class="row" style="flex-wrap: wrap; gap: var(--space-3);">
     <div class="field grow">
       <label class="field__label" for="start">{t('op.startTime')}</label>

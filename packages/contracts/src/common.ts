@@ -27,6 +27,9 @@ export type ApiError = z.infer<typeof ApiErrorSchema>;
 export const ERROR_CODES = {
   // auth
   INVALID_MOBILE: 'INVALID_MOBILE',
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  PASSWORD_TOO_SHORT: 'PASSWORD_TOO_SHORT',
+  PASSWORD_TOO_LONG: 'PASSWORD_TOO_LONG',
   OTP_RATE_LIMITED: 'OTP_RATE_LIMITED',
   OTP_PROVIDER_UNAVAILABLE: 'OTP_PROVIDER_UNAVAILABLE',
   INVALID_OTP: 'INVALID_OTP',
@@ -181,3 +184,12 @@ export const LanguageTag = z.string().min(2).max(8);
 
 /** Indian state code, e.g. "GJ". */
 export const StateCode = z.string().min(1).max(8);
+
+/**
+ * Password validation: strict requirement of 8 to 64 characters.
+ */
+export const Password = z
+  .string()
+  .min(8, 'Password must be at least 8 characters')
+  .max(64, 'Password must be at most 64 characters');
+export type Password = z.infer<typeof Password>;

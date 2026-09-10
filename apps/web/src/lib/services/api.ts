@@ -29,8 +29,10 @@ import type {
   CreateProcurementEventBody,
   CreateSlotBody,
   FarmerDashboardResponse,
+  FarmerRegisterBody,
   MeResponse,
   OperatorDashboardResponse,
+  OperatorRegisterBody,
   OperatorSlot,
   OperatorSlotsQuery,
   OperatorSlotsResponse,
@@ -38,6 +40,7 @@ import type {
   OtpRequestResponse,
   OtpVerifyBody,
   OtpVerifyResponse,
+  PasswordLoginBody,
   PatchSlotBody,
   Payment,
   Procurement,
@@ -86,13 +89,9 @@ export interface ApiClient {
   // A. Authentication
   requestOtp(body: OtpRequestBody): Promise<OtpRequestResponse>;
   verifyOtp(body: OtpVerifyBody): Promise<OtpVerifyResponse>;
-  registerOperator?(body: {
-    mobile: string;
-    fullName: string;
-    centreId?: string;
-    badgeId?: string;
-    department?: string;
-  }): Promise<OtpVerifyResponse>;
+  loginWithPassword(body: PasswordLoginBody): Promise<OtpVerifyResponse>;
+  registerFarmer(body: FarmerRegisterBody): Promise<OtpVerifyResponse>;
+  registerOperator(body: OperatorRegisterBody): Promise<OtpVerifyResponse>;
   logout(): Promise<void>;
 
   // B. Profile / registration

@@ -10,6 +10,7 @@
   import Spinner from '$lib/components/Spinner.svelte';
   import ErrorBanner from '$lib/components/ErrorBanner.svelte';
   import Empty from '$lib/components/Empty.svelte';
+  import CongestionIndicator from '$lib/components/CongestionIndicator.svelte';
 
   let status = $state<'loading' | 'error' | 'ready'>('loading');
   let error = $state('');
@@ -91,7 +92,11 @@
           {data?.active_queue ? `Token #${data.active_queue.position}` : 'Not in queue'}
         </span>
         <span class="dash-stat__sub">
-          {data?.active_queue ? `${formatWait(data.active_queue.estimated_wait_min)} wait` : 'Live arrival token'}
+          {#if data?.active_queue}
+            {data.active_queue.farmers_ahead} ahead · {formatWait(data.active_queue.estimated_wait_min)} wait
+          {:else}
+            Live arrival token
+          {/if}
         </span>
       </div>
     </div>
@@ -123,14 +128,18 @@
       <div class="row row--between">
         <div class="row">
           <span class="live-dot"></span>
-          <span class="card__title">{t('queue.title')}</span>
+          <span class="card__title">{t('queue.title')} — Live Token #{q.position}</span>
         </div>
         <StatusBadge value={q.state} />
       </div>
-      <div class="stat-grid">
-        <div class="stat"><div class="stat__num">{q.position}</div><div class="stat__label">{t('queue.position')}</div></div>
-        <div class="stat"><div class="stat__num">{formatWait(q.estimated_wait_min)}</div><div class="stat__label">{t('queue.eta')}</div></div>
-      </div>
+
+      <!-- Prominently displayed wait time, farmers ahead, and Congestion Level Indicator -->
+      <CongestionIndicator
+        waitMinutes={q.estimated_wait_min}
+        farmersAhead={q.farmers_ahead}
+        showAdvice={true}
+      />
+
       <a class="btn btn--primary btn--block" href="/queue">{t('dash.viewQueue')}</a>
     </div>
   {/if}

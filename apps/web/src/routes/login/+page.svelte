@@ -14,7 +14,12 @@
   // State: Tab toggle ('login' | 'register')
   let mode = $state<'login' | 'register'>('login');
 
-  // Login steps: 'phone' (enter mobile) | 'otp' (verify 6-digit OTP)
+  // Auth Method on Login: 'password' | 'otp'
+  let authMethod = $state<'password' | 'otp'>('password');
+  let loginPassword = $state('DemoPassword123!');
+  let showLoginPassword = $state(false);
+
+  // Login steps for OTP: 'phone' | 'otp'
   let loginStep = $state<'phone' | 'otp'>('phone');
   let loginPhoneDigits = $state('9876543210');
   let enteredOtp = $state('');
@@ -22,6 +27,8 @@
 
   // Farmer Registration form fields
   let regPhoneDigits = $state('');
+  let regFarmerPassword = $state('');
+  let showRegFarmerPassword = $state(false);
   let fullName = $state('');
   let stateCode = $state('GJ');
   let district = $state('');
@@ -32,6 +39,8 @@
 
   // Operator Registration form fields
   let regOpMobile = $state('9999900002');
+  let regOpPassword = $state('');
+  let showRegOpPassword = $state(false);
   let regOpName = $state('');
   let regOpBadge = $state('');
   let regOpCentre = $state('11111111-1111-4111-8111-111111111111');
@@ -62,9 +71,11 @@
   ];
 
   const OPERATOR_CENTRES = [
-    { id: '11111111-1111-4111-8111-111111111111', name: 'SIH Demo Procurement Centre 01 (Gandhinagar / Rajkot, GJ)' },
-    { id: '22222222-1111-4111-8111-111111111111', name: 'APMC Market Yard Sector 11 (Gandhinagar, GJ)' },
-    { id: '33333333-1111-4111-8111-111111111111', name: 'Kharif Procurement Hub 03 (Ahmedabad, GJ)' }
+    { id: '11111111-1111-4111-8111-111111111111', name: 'SIH Demo Procurement Centre 01 (Gandhinagar, GJ)' },
+    { id: '11111111-1111-4111-8111-222222222221', name: 'Ahmedabad APMC Grain & Cotton Market Yard Centre (Ahmedabad, GJ)' },
+    { id: '11111111-1111-4111-8111-222222222222', name: 'Vadodara Central APMC Agro Procurement Hub (Vadodara, GJ)' },
+    { id: '11111111-1111-4111-8111-222222222223', name: 'Rajkot Bedi APMC Modern Commodity Terminal (Rajkot, GJ)' },
+    { id: '11111111-1111-4111-8111-222222222224', name: 'Gondal APMC Groundnut & Cotton Marketing Yard (Gondal, GJ)' }
   ];
 
   const OPERATOR_DEPTS = [
@@ -74,22 +85,33 @@
     'State Warehousing & Procurement Board'
   ];
 
+  import { getCurrentHourSlot } from '$lib/format';
+  const demoSlot = getCurrentHourSlot();
+
   const demoLogins = [
-    {
-      mobileDigits: '9876543210',
-      label: 'Ramesh Patel',
-      role: 'Farmer',
-      sub: 'Gujarat • Ready to book a slot',
-      icon: '🌱',
-      badge: 'Active Profile'
-    },
     {
       mobileDigits: '9812345678',
       label: 'Suresh Kumar',
       role: 'Farmer',
-      sub: 'In today queue • Token #1',
+      sub: `Slot ${demoSlot.start}–${demoSlot.end} • Token #1 (At Desk)`,
       icon: '⏳',
-      badge: 'In Queue'
+      badge: 'At Desk'
+    },
+    {
+      mobileDigits: '9876543210',
+      label: 'Ramesh Patel',
+      role: 'Farmer',
+      sub: `Slot ${demoSlot.start}–${demoSlot.end} • Token #2 (1 ahead)`,
+      icon: '🌱',
+      badge: 'Waiting #2'
+    },
+    {
+      mobileDigits: '9988112233',
+      label: 'Vikram Singh',
+      role: 'Farmer',
+      sub: `Slot ${demoSlot.start}–${demoSlot.end} • Token #3 (2 ahead)`,
+      icon: '🌾',
+      badge: 'Waiting #3'
     },
     {
       mobileDigits: '9999900001',
@@ -163,6 +185,58 @@
     return errorMessage('INTERNAL_ERROR', 'Something went wrong. Please try again.');
   }
 
+  function validatePasswordConstraint(pwd: string): string | null {
+    if (!pwd || pwd.length < 8) {
+      return 'Password must be at least 8 characters long.';
+    }
+    if (pwd.length > 64) {
+      return 'Password must be at most 64 characters long.';
+    }
+    return null;
+  }
+
+  // Password Login Handler
+  async function handlePasswordLogin() {
+    error = '';
+    const clean = loginPhoneDigits.replace(/\D/g, '');
+    if (!clean || clean.length < 10) {
+      error = 'Please enter a valid 10-digit mobile number.';
+      return;
+    }
+
+    const pwdErr = validatePasswordConstraint(loginPassword);
+    if (pwdErr) {
+      error = pwdErr;
+      return;
+    }
+
+    loginPhoneDigits = clean.slice(-10);
+    const mobileToUse = normalizeMobile(loginPhoneDigits);
+    loading = true;
+
+    try {
+      const res = await api.loginWithPassword({
+        mobile: mobileToUse,
+        password: loginPassword
+      });
+      const me = await completeLogin(res);
+
+      if (me?.role === 'OPERATOR') {
+        await goto('/operator/dashboard');
+      } else if (me && !me.profile_complete) {
+        mode = 'register';
+        role = 'farmer';
+        regPhoneDigits = loginPhoneDigits;
+      } else {
+        await goto('/dashboard');
+      }
+    } catch (err) {
+      error = toMessage(err);
+    } finally {
+      loading = false;
+    }
+  }
+
   // Step 1: Request OTP for login
   async function requestLoginOtp(targetDigits?: string) {
     error = '';
@@ -212,10 +286,10 @@
       if (me?.role === 'OPERATOR') {
         await goto('/operator/dashboard');
       } else if (role === 'operator') {
-        // If logged in under operator role, ensure operator desk access
         if (api.registerOperator) {
           const opRes = await api.registerOperator({
             mobile: mobileToUse,
+            password: 'DemoPassword123!',
             fullName: 'Mandi Procurement Officer'
           });
           await completeLogin(opRes);
@@ -240,36 +314,14 @@
   async function handleDemoSelect(digits: string, demoRole: string) {
     error = '';
     loginPhoneDigits = digits;
+    loginPassword = 'DemoPassword123!';
     if (demoRole === 'Operator') {
       role = 'operator';
     } else {
       role = 'farmer';
     }
 
-    if (API_MODE === 'mock') {
-      loading = true;
-      try {
-        const mobileToUse = normalizeMobile(digits);
-        await api.requestOtp({ mobile: mobileToUse });
-        const res = await api.verifyOtp({ mobile: mobileToUse, otp: '123456' });
-        const me = await completeLogin(res);
-        if (me?.role === 'OPERATOR') {
-          await goto('/operator/dashboard');
-        } else if (me && !me.profile_complete) {
-          mode = 'register';
-          role = 'farmer';
-          regPhoneDigits = digits;
-        } else {
-          await goto('/dashboard');
-        }
-      } catch (err) {
-        error = toMessage(err);
-      } finally {
-        loading = false;
-      }
-    } else {
-      await requestLoginOtp(digits);
-    }
+    await handlePasswordLogin();
   }
 
   function changeNumber() {
@@ -278,7 +330,7 @@
     error = '';
   }
 
-  // Farmer registration
+  // Farmer registration with password
   async function handleFarmerRegister() {
     error = '';
     if (!privacy) {
@@ -290,19 +342,19 @@
       return;
     }
 
+    const pwdErr = validatePasswordConstraint(regFarmerPassword);
+    if (pwdErr) {
+      error = pwdErr;
+      return;
+    }
+
     const mobileToUse = normalizeMobile(regPhoneDigits);
     loading = true;
 
     try {
-      if (session.status !== 'authenticated') {
-        try {
-          await api.requestOtp({ mobile: mobileToUse });
-        } catch {}
-        const authRes = await api.verifyOtp({ mobile: mobileToUse, otp: '123456' });
-        await completeLogin(authRes);
-      }
-
-      await api.updateFarmer({
+      const res = await api.registerFarmer({
+        mobile: mobileToUse,
+        password: regFarmerPassword,
         full_name: fullName.trim(),
         state_code: stateCode,
         district: district.trim(),
@@ -312,17 +364,18 @@
         privacy_acknowledged: privacy
       });
 
+      await completeLogin(res);
       setLang(preferredLang);
       await refreshMe();
       await goto('/dashboard');
     } catch (err) {
-      error = isApiClientError(err) ? errorMessage(err.code, err.message) : 'Registration failed. Please try again.';
+      error = toMessage(err);
     } finally {
       loading = false;
     }
   }
 
-  // Operator registration
+  // Operator registration with password
   async function handleOperatorRegister() {
     error = '';
     if (!opAuthAck) {
@@ -334,26 +387,26 @@
       return;
     }
 
+    const pwdErr = validatePasswordConstraint(regOpPassword);
+    if (pwdErr) {
+      error = pwdErr;
+      return;
+    }
+
     const mobileToUse = normalizeMobile(regOpMobile);
     loading = true;
 
     try {
-      if (api.registerOperator) {
-        const res = await api.registerOperator({
-          mobile: mobileToUse,
-          fullName: regOpName.trim(),
-          centreId: regOpCentre,
-          badgeId: regOpBadge.trim() || undefined,
-          department: regOpDept
-        });
-        await completeLogin(res);
-        await goto('/operator/dashboard');
-      } else {
-        await api.requestOtp({ mobile: mobileToUse });
-        const res = await api.verifyOtp({ mobile: mobileToUse, otp: '123456' });
-        await completeLogin(res);
-        await goto('/operator/dashboard');
-      }
+      const res = await api.registerOperator({
+        mobile: mobileToUse,
+        password: regOpPassword,
+        fullName: regOpName.trim(),
+        centreId: regOpCentre,
+        badgeId: regOpBadge.trim() || undefined,
+        department: regOpDept
+      });
+      await completeLogin(res);
+      await goto('/operator/dashboard');
     } catch (err) {
       error = toMessage(err);
     } finally {
@@ -501,7 +554,101 @@
 
       <!-- TAB 1: LOGIN (FARMER & OPERATOR) -->
       {#if mode === 'login'}
-        {#if loginStep === 'phone'}
+        <!-- Auth Method Sub-Toggle (Password vs OTP) -->
+        <div class="auth-method-nav">
+          <button
+            type="button"
+            class="method-btn"
+            class:method-btn--active={authMethod === 'password'}
+            onclick={() => { authMethod = 'password'; error = ''; }}
+          >
+            🔑 Password Sign In
+          </button>
+          <button
+            type="button"
+            class="method-btn"
+            class:method-btn--active={authMethod === 'otp'}
+            onclick={() => { authMethod = 'otp'; error = ''; }}
+          >
+            📲 SMS OTP
+          </button>
+        </div>
+
+        {#if authMethod === 'password'}
+          <!-- Password Login Form -->
+          <form class="auth-form" onsubmit={(e) => { e.preventDefault(); handlePasswordLogin(); }}>
+            <div class="field-group">
+              <label class="field-label" for="login-mobile-pwd">
+                {role === 'farmer' ? t('login.mobile') : 'Operator Mobile Number'} *
+              </label>
+              <div class="phone-input-box" class:phone-input-box--op={role === 'operator'}>
+                <div class="country-prefix">
+                  <svg class="flag-svg" viewBox="0 0 36 24" width="22" height="15">
+                    <rect width="36" height="8" fill="#FF9933"/>
+                    <rect y="8" width="36" height="8" fill="#FFFFFF"/>
+                    <rect y="16" width="36" height="8" fill="#138808"/>
+                    <circle cx="18" cy="12" r="3.2" fill="none" stroke="#000080" stroke-width="0.8"/>
+                    <circle cx="18" cy="12" r="0.8" fill="#000080"/>
+                  </svg>
+                  <span class="prefix-number">+91</span>
+                  <span class="prefix-divider"></span>
+                </div>
+                <input
+                  id="login-mobile-pwd"
+                  class="phone-input"
+                  type="tel"
+                  inputmode="numeric"
+                  autocomplete="tel"
+                  bind:value={loginPhoneDigits}
+                  placeholder={role === 'farmer' ? '98765 43210' : '99999 00001'}
+                  required
+                  maxlength="14"
+                />
+              </div>
+            </div>
+
+            <div class="field-group">
+              <div class="field-label-row">
+                <label class="field-label" for="login-password">Password *</label>
+                <span class="char-constraint" class:char-constraint--valid={loginPassword.length >= 8 && loginPassword.length <= 64}>
+                  {loginPassword.length >= 8 && loginPassword.length <= 64 ? '✓ Valid (8–64)' : 'Min 8 characters required'}
+                </span>
+              </div>
+              <div class="password-input-wrapper">
+                <input
+                  id="login-password"
+                  class="form-input password-input"
+                  type={showLoginPassword ? 'text' : 'password'}
+                  bind:value={loginPassword}
+                  placeholder="Enter your account password"
+                  required
+                  minlength="8"
+                  maxlength="64"
+                />
+                <button
+                  type="button"
+                  class="toggle-pwd-btn"
+                  onclick={() => (showLoginPassword = !showLoginPassword)}
+                  aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showLoginPassword ? '🙈' : '👁️'}
+                </button>
+              </div>
+              {#if loginPassword.length > 0 && loginPassword.length < 8}
+                <p class="field-error-msg">⚠️ Password must be at least 8 characters ({8 - loginPassword.length} more needed)</p>
+              {/if}
+            </div>
+
+            <button class="btn-primary" class:btn-primary--op={role === 'operator'} type="submit" disabled={loading}>
+              {#if loading}
+                <span class="spinner-icon"></span>
+                <span>{t('common.loading')}</span>
+              {:else}
+                <span>Sign In with Password &rarr;</span>
+              {/if}
+            </button>
+          </form>
+        {:else if loginStep === 'phone'}
           <form class="auth-form" onsubmit={(e) => { e.preventDefault(); requestLoginOtp(); }}>
             <div class="field-group">
               <div class="field-label-row">
@@ -699,6 +846,39 @@
             </div>
 
             <div class="field-group">
+              <div class="field-label-row">
+                <label class="field-label" for="reg-farmer-password">Create Account Password *</label>
+                <span class="char-constraint" class:char-constraint--valid={regFarmerPassword.length >= 8 && regFarmerPassword.length <= 64}>
+                  {regFarmerPassword.length >= 8 && regFarmerPassword.length <= 64 ? '✓ Valid (8–64)' : 'Min 8 characters required'}
+                </span>
+              </div>
+              <div class="password-input-wrapper">
+                <input
+                  id="reg-farmer-password"
+                  class="form-input password-input"
+                  type={showRegFarmerPassword ? 'text' : 'password'}
+                  bind:value={regFarmerPassword}
+                  placeholder="At least 8 characters"
+                  required
+                  minlength="8"
+                  maxlength="64"
+                />
+                <button
+                  type="button"
+                  class="toggle-pwd-btn"
+                  onclick={() => (showRegFarmerPassword = !showRegFarmerPassword)}
+                  aria-label={showRegFarmerPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showRegFarmerPassword ? '🙈' : '👁️'}
+                </button>
+              </div>
+              {#if regFarmerPassword.length > 0 && regFarmerPassword.length < 8}
+                <p class="field-error-msg">⚠️ Password must be at least 8 characters ({8 - regFarmerPassword.length} more needed)</p>
+              {/if}
+              <p class="field-help">Used to sign in directly to your farmer portal anytime</p>
+            </div>
+
+            <div class="field-group">
               <label class="field-label" for="full-name">{t('register.fullName')} *</label>
               <input
                 id="full-name"
@@ -841,6 +1021,39 @@
                 />
               </div>
               <p class="field-help">Registered official mobile for OTP authentication & token calling</p>
+            </div>
+
+            <div class="field-group">
+              <div class="field-label-row">
+                <label class="field-label" for="reg-op-password">Desk Security Password *</label>
+                <span class="char-constraint" class:char-constraint--valid={regOpPassword.length >= 8 && regOpPassword.length <= 64}>
+                  {regOpPassword.length >= 8 && regOpPassword.length <= 64 ? '✓ Valid (8–64)' : 'Min 8 characters required'}
+                </span>
+              </div>
+              <div class="password-input-wrapper">
+                <input
+                  id="reg-op-password"
+                  class="form-input password-input"
+                  type={showRegOpPassword ? 'text' : 'password'}
+                  bind:value={regOpPassword}
+                  placeholder="Official desk password (8+ chars)"
+                  required
+                  minlength="8"
+                  maxlength="64"
+                />
+                <button
+                  type="button"
+                  class="toggle-pwd-btn"
+                  onclick={() => (showRegOpPassword = !showRegOpPassword)}
+                  aria-label={showRegOpPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showRegOpPassword ? '🙈' : '👁️'}
+                </button>
+              </div>
+              {#if regOpPassword.length > 0 && regOpPassword.length < 8}
+                <p class="field-error-msg">⚠️ Password must be at least 8 characters ({8 - regOpPassword.length} more needed)</p>
+              {/if}
+              <p class="field-help">Secures operator desk queue calling and weighment entry</p>
             </div>
 
             <div class="field-group">
@@ -1866,5 +2079,99 @@
 
   .trust-dot {
     color: #cbd5ce;
+  }
+
+  /* Sub-tab Auth Method Nav (Password vs OTP) */
+  .auth-method-nav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    background: #f1f5f9;
+    padding: 4px;
+    border-radius: 10px;
+    margin-bottom: 4px;
+  }
+
+  .method-btn {
+    border: none;
+    background: transparent;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #64748b;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+  }
+
+  .method-btn:hover:not(.method-btn--active) {
+    color: #1e293b;
+    background: rgba(255, 255, 255, 0.6);
+  }
+
+  .method-btn--active {
+    background: #ffffff;
+    color: #0f172a;
+    font-weight: 700;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+
+  /* Password Input & Constraint Indicator */
+  .password-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .password-input {
+    padding-right: 44px !important;
+    width: 100%;
+  }
+
+  .toggle-pwd-btn {
+    position: absolute;
+    right: 10px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #64748b;
+    transition: transform 0.1s ease;
+  }
+
+  .toggle-pwd-btn:hover {
+    transform: scale(1.1);
+  }
+
+  .char-constraint {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #b45309;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    padding: 2px 7px;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+  }
+
+  .char-constraint--valid {
+    color: #15803d;
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+  }
+
+  .field-error-msg {
+    font-size: 12px;
+    font-weight: 600;
+    color: #b91c1c;
+    margin: 2px 0 0;
   }
 </style>

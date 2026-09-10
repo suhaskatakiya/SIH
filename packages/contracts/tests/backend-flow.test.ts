@@ -16,6 +16,53 @@ describe('Workflow State Machines', () => {
       expect(C.QueueStateSchema.parse('COMPLETED')).toBe('COMPLETED');
       expect(() => C.QueueStateSchema.parse('CANCELLED')).toThrow();
     });
+
+    it('simulates queue progression across multiple farmers in the same slot window', () => {
+      // 3 farmers in same slot: Suresh (Called), Ramesh (Waiting #1 ahead), Vikram (Waiting #2 ahead)
+      const queue = [
+        { id: 'q1', booking_id: 'b1', name: 'Suresh Kumar', state: 'CALLED' as C.QueueState },
+        { id: 'q2', booking_id: 'b2', name: 'Ramesh Patel', state: 'WAITING' as C.QueueState },
+        { id: 'q3', booking_id: 'b3', name: 'Vikram Singh', state: 'WAITING' as C.QueueState }
+      ];
+
+      const getPositions = () => {
+        const active = queue.filter((q) => q.state !== 'COMPLETED');
+        return active.map((entry, idx) => ({
+          name: entry.name,
+          state: entry.state,
+          position: idx + 1,
+          farmers_ahead: idx,
+          wait_min: idx * 10
+        }));
+      };
+
+      // Step 1: Initial state
+      let pos = getPositions();
+      expect(pos[0]).toEqual({ name: 'Suresh Kumar', state: 'CALLED', position: 1, farmers_ahead: 0, wait_min: 0 });
+      expect(pos[1]).toEqual({ name: 'Ramesh Patel', state: 'WAITING', position: 2, farmers_ahead: 1, wait_min: 10 });
+      expect(pos[2]).toEqual({ name: 'Vikram Singh', state: 'WAITING', position: 3, farmers_ahead: 2, wait_min: 20 });
+
+      // Step 2: Operator calls Next Farmer -> completes Suresh, calls Ramesh
+      const currentActive = queue.find((q) => q.state === 'CALLED');
+      if (currentActive) currentActive.state = 'COMPLETED';
+      const nextWaiting = queue.find((q) => q.state === 'WAITING');
+      if (nextWaiting) nextWaiting.state = 'CALLED';
+
+      pos = getPositions();
+      expect(pos).toHaveLength(2);
+      expect(pos[0]).toEqual({ name: 'Ramesh Patel', state: 'CALLED', position: 1, farmers_ahead: 0, wait_min: 0 });
+      expect(pos[1]).toEqual({ name: 'Vikram Singh', state: 'WAITING', position: 2, farmers_ahead: 1, wait_min: 10 });
+
+      // Step 3: Operator calls Next Farmer again -> completes Ramesh, calls Vikram
+      const currentActive2 = queue.find((q) => q.state === 'CALLED');
+      if (currentActive2) currentActive2.state = 'COMPLETED';
+      const nextWaiting2 = queue.find((q) => q.state === 'WAITING');
+      if (nextWaiting2) nextWaiting2.state = 'CALLED';
+
+      pos = getPositions();
+      expect(pos).toHaveLength(1);
+      expect(pos[0]).toEqual({ name: 'Vikram Singh', state: 'CALLED', position: 1, farmers_ahead: 0, wait_min: 0 });
+    });
   });
 
   describe('Procurement state transitions (§4.6)', () => {

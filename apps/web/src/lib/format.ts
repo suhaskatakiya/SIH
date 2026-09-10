@@ -37,10 +37,60 @@ export function formatDate(iso: string | null | undefined): string {
   return `${Number(m[3])} ${month} ${m[1]}`;
 }
 
-/** "10:30" + "11:00" -> "10:30 – 11:00". */
+/** "10:00" + "11:00" -> "10:00 – 11:00". */
 export function formatTimeRange(start: string, end: string): string {
-  return `${start} – ${end}`;
+  if (!start || !end) return `${start || ''} – ${end || ''}`;
+  return `${start.slice(0, 5)} – ${end.slice(0, 5)}`;
 }
+
+/** "09:00" -> "9:00 AM", "13:00" -> "1:00 PM". */
+export function formatTime12h(timeStr: string): string {
+  if (!timeStr) return '';
+  const [hStr, mStr] = timeStr.split(':');
+  const h = Number(hStr);
+  const m = mStr ? `:${mStr}` : ':00';
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}${m !== ':00' ? m : ':00'} ${ampm}`;
+}
+
+/** "09:00" + "10:00" -> "09:00 – 10:00 (9 AM – 10 AM)". */
+export function formatTimeSlotLabel(start: string, end: string): string {
+  if (!start || !end) return `${start || ''} – ${end || ''}`;
+  const s = start.slice(0, 5);
+  const e = end.slice(0, 5);
+  const to12 = (t: string) => {
+    const [hStr] = t.split(':');
+    const h = Number(hStr);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12} ${ampm}`;
+  };
+  return `${s} – ${e} (${to12(s)} – ${to12(e)})`;
+}
+
+/** Get active 1-hour slot based on real-time current hour (09:00 to 18:00). */
+export function getCurrentHourSlot(): { start: string; end: string } {
+  const h = new Date().getHours();
+  const startHour = Math.min(Math.max(h, 9), 17);
+  return {
+    start: `${String(startHour).padStart(2, '0')}:00`,
+    end: `${String(startHour + 1).padStart(2, '0')}:00`
+  };
+}
+
+/** Standard 1-hour slot windows from 9 AM morning to 6 PM evening. */
+export const STANDARD_HOURLY_SLOTS: Array<[string, string]> = [
+  ['09:00', '10:00'],
+  ['10:00', '11:00'],
+  ['11:00', '12:00'],
+  ['12:00', '13:00'],
+  ['13:00', '14:00'],
+  ['14:00', '15:00'],
+  ['15:00', '16:00'],
+  ['16:00', '17:00'],
+  ['17:00', '18:00']
+];
 
 /** ISO-8601 timestamp -> "10 Sep 2026, 10:14". Falls back gracefully. */
 export function formatDateTime(iso: string | null | undefined): string {

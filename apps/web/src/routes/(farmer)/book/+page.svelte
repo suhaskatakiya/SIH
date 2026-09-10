@@ -2,7 +2,7 @@
   import type { Booking, CentreListItem, SlotListItem } from '@cropsaathi/contracts';
   import { api, isApiClientError } from '$lib/services';
   import { t, i18n, errorMessage } from '$lib/i18n.svelte';
-  import { formatDate, formatTimeRange, formatMoney, todayIso, addDaysIso } from '$lib/format';
+  import { formatDate, formatTimeRange, formatTimeSlotLabel, getCurrentHourSlot, formatMoney, todayIso, addDaysIso } from '$lib/format';
   import { getCommodityGroups, getCommodityRate, formatCommodity } from '$lib/commodities';
   import CalendarPicker from '$lib/components/CalendarPicker.svelte';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
@@ -61,6 +61,11 @@
     try {
       const res = await api.getSlots(id, { date });
       slots = res.slots;
+      const current = getCurrentHourSlot();
+      const currentMatch = res.slots.find((s) => s.start === current.start && s.remaining > 0);
+      if (currentMatch) {
+        selectedSlotId = currentMatch.id;
+      }
     } catch (err) {
       error = isApiClientError(err) ? errorMessage(err.code, err.message) : 'Something went wrong.';
     } finally {
@@ -101,7 +106,7 @@
       <div class="kv"><span class="kv__k">{t('label.commodity')}</span><span class="kv__v">{formatCommodity(booked.commodity_code, i18n.lang)}</span></div>
       <div class="kv"><span class="kv__k">{t('label.centre')}</span><span class="kv__v">{booked.centre_name}</span></div>
       <div class="kv"><span class="kv__k">{t('label.date')}</span><span class="kv__v">{formatDate(booked.slot_date)}</span></div>
-      <div class="kv"><span class="kv__k">{t('label.slot')}</span><span class="kv__v">{formatTimeRange(booked.slot_start, booked.slot_end)}</span></div>
+      <div class="kv"><span class="kv__k">{t('label.slot')}</span><span class="kv__v">{formatTimeSlotLabel(booked.slot_start, booked.slot_end)}</span></div>
       <div class="kv"><span class="kv__k">{t('label.quantity')}</span><span class="kv__v">{booked.expected_quantity_qtl} qtl</span></div>
     </div>
     <a class="btn btn--primary btn--block" href="/dashboard">{t('nav.home')}</a>
@@ -187,7 +192,7 @@
                 disabled={s.remaining === 0}
                 onclick={() => (selectedSlotId = s.id)}
               >
-                <span class="slot-btn__time">{formatTimeRange(s.start, s.end)}</span>
+                <span class="slot-btn__time">{formatTimeSlotLabel(s.start, s.end)}</span>
                 <span class="slot-btn__rem">{s.remaining === 0 ? t('book.full') : `${s.remaining} ${t('book.remaining')}`}</span>
               </button>
             {/each}

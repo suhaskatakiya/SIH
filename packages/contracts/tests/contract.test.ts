@@ -35,6 +35,55 @@ describe('A. auth', () => {
   it('rejects a non-E.164 mobile', () => {
     expect(() => C.OtpRequestBody.parse({ mobile: '9876543210' })).toThrow();
   });
+
+  it('validates password constraints (min 8, max 64 characters)', () => {
+    // Valid passwords
+    expect(() => C.Password.parse('12345678')).not.toThrow();
+    expect(() => C.Password.parse('CorrectHorseBatteryStaple123!')).not.toThrow();
+    expect(() => C.Password.parse('a'.repeat(64))).not.toThrow();
+
+    // Invalid passwords (too short < 8 or too long > 64)
+    expect(() => C.Password.parse('')).toThrow();
+    expect(() => C.Password.parse('1234567')).toThrow();
+    expect(() => C.Password.parse('a'.repeat(65))).toThrow();
+  });
+
+  it('validates password-based login and registration bodies', () => {
+    expect(() =>
+      C.PasswordLoginBody.parse({
+        mobile: '+919876543210',
+        password: 'SecurePassword123'
+      })
+    ).not.toThrow();
+
+    // Rejects password < 8 chars in login body
+    expect(() =>
+      C.PasswordLoginBody.parse({
+        mobile: '+919876543210',
+        password: 'short'
+      })
+    ).toThrow();
+
+    expect(() =>
+      C.FarmerRegisterBody.parse({
+        mobile: '+919876543210',
+        password: 'FarmerSecurePass1',
+        full_name: 'Bhupendra Patel',
+        state_code: 'GJ',
+        district: 'Ahmedabad',
+        village: 'Sanand',
+        privacy_acknowledged: true
+      })
+    ).not.toThrow();
+
+    expect(() =>
+      C.OperatorRegisterBody.parse({
+        mobile: '+919999900001',
+        password: 'OperatorPass999!',
+        fullName: 'Mandi In-charge'
+      })
+    ).not.toThrow();
+  });
 });
 
 describe('B. profile', () => {
@@ -300,6 +349,38 @@ describe('I. operator dashboard / slots', () => {
     ).not.toThrow();
     expect(() => C.PatchSlotBody.parse({ capacity: 14, active: true })).not.toThrow();
     expect(() => C.PatchSlotBody.parse({})).toThrow();
+  });
+});
+
+describe('J. operator centre queue / bookings listing', () => {
+  it('parses centre booking row and response', () => {
+    const row = {
+      booking_id: '00000000-0000-0000-0000-000000000010',
+      reference: 'BK-DEMO-001',
+      farmer_name: 'Suresh Kumar',
+      commodity_code: 'WHEAT',
+      expected_quantity_qtl: '25.00',
+      slot_start: '09:00',
+      slot_end: '09:30',
+      booking_status: 'IN_QUEUE',
+      queue_state: 'WAITING',
+      position: 1,
+      procurement_id: null,
+      procurement_status: null
+    };
+
+    expect(() => C.CentreBookingRow.parse(row)).not.toThrow();
+
+    const response = {
+      centre_id: '00000000-0000-0000-0000-000000000020',
+      centre_name: 'SIH Demo Procurement Centre 01',
+      date: '2026-09-10',
+      bookings: [row]
+    };
+
+    expect(() => C.CentreBookingsResponse.parse(response)).not.toThrow();
+    expect(() => C.CentreBookingsQuery.parse({ date: '2026-09-10' })).not.toThrow();
+    expect(() => C.CentreBookingsQuery.parse({})).not.toThrow();
   });
 });
 

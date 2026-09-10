@@ -28,8 +28,10 @@ import type {
   CreateProcurementEventBody,
   CreateSlotBody,
   FarmerDashboardResponse,
+  FarmerRegisterBody,
   MeResponse,
   OperatorDashboardResponse,
+  OperatorRegisterBody,
   OperatorSlot,
   OperatorSlotsQuery,
   OperatorSlotsResponse,
@@ -37,6 +39,7 @@ import type {
   OtpRequestResponse,
   OtpVerifyBody,
   OtpVerifyResponse,
+  PasswordLoginBody,
   PatchSlotBody,
   Payment,
   PaymentStatus,
@@ -55,7 +58,7 @@ import type {
   UpdateFarmerResponse
 } from '@cropsaathi/contracts';
 import { ERROR_CODES } from '@cropsaathi/contracts';
-import { addDaysIso, todayIso } from '../../format';
+import { addDaysIso, todayIso, getCurrentHourSlot, STANDARD_HOURLY_SLOTS } from '../../format';
 import type { ApiClient, CentreBookingRow, CentreBookingsResponse } from '../api';
 import { ApiClientError } from '../errors';
 
@@ -125,6 +128,7 @@ function mulMoney(a: string, b: string): string {
 interface UserRow {
   id: string;
   mobile: string;
+  password?: string;
   role: Role;
   profile_complete: boolean;
 }
@@ -224,14 +228,20 @@ interface MockDb {
   payments: PaymentRow[];
 }
 
-const DB_KEY = 'cropsaathi.mock.db.v1';
-const DB_VERSION = 1;
+const DB_KEY = 'cropsaathi.mock.db.v2';
+const DB_VERSION = 2;
 
 /* Fixed IDs for seeded rows (valid UUIDs). */
 const CENTRE_1 = '11111111-1111-4111-8111-111111111111';
+const CENTRE_AHMEDABAD = '11111111-1111-4111-8111-222222222221';
+const CENTRE_VADODARA = '11111111-1111-4111-8111-222222222222';
+const CENTRE_RAJKOT = '11111111-1111-4111-8111-222222222223';
+const CENTRE_GONDAL = '11111111-1111-4111-8111-222222222224';
+
 const USER_RAMESH = '22222222-2222-4222-8222-222222222222';
 const USER_OPERATOR = '33333333-3333-4333-8333-333333333333';
 const USER_SURESH = '44444444-4444-4444-8444-444444444444';
+const USER_VIKRAM = '55555555-5555-4555-8555-555555555555';
 
 function uuid(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
@@ -248,21 +258,14 @@ function nowIso(): string {
 }
 
 function seedSlots(centreId: string, date: string, db: MockDb): void {
-  const times: Array<[string, string]> = [
-    ['09:00', '09:30'],
-    ['09:30', '10:00'],
-    ['10:00', '10:30'],
-    ['10:30', '11:00'],
-    ['11:00', '11:30']
-  ];
-  for (const [start, end] of times) {
+  for (const [start, end] of STANDARD_HOURLY_SLOTS) {
     db.slots.push({
       id: uuid(),
       centre_id: centreId,
       date,
       start,
       end,
-      capacity: 5,
+      capacity: 10,
       booked_count: 0,
       active: true
     });
@@ -275,9 +278,10 @@ function seed(): MockDb {
     version: DB_VERSION,
     seq: { booking: 0, receipt: 0 },
     users: [
-      { id: USER_RAMESH, mobile: '+919876543210', role: 'FARMER', profile_complete: true },
-      { id: USER_OPERATOR, mobile: '+919999900001', role: 'OPERATOR', profile_complete: true },
-      { id: USER_SURESH, mobile: '+919812345678', role: 'FARMER', profile_complete: true }
+      { id: USER_RAMESH, mobile: '+919876543210', password: 'DemoPassword123!', role: 'FARMER', profile_complete: true },
+      { id: USER_OPERATOR, mobile: '+919999900001', password: 'DemoPassword123!', role: 'OPERATOR', profile_complete: true },
+      { id: USER_SURESH, mobile: '+919812345678', password: 'DemoPassword123!', role: 'FARMER', profile_complete: true },
+      { id: USER_VIKRAM, mobile: '+919988112233', password: 'DemoPassword123!', role: 'FARMER', profile_complete: true }
     ],
     farmers: [
       {
@@ -297,12 +301,49 @@ function seed(): MockDb {
         village: 'Vavdi',
         external_farmer_ref: null,
         preferred_language: 'hi'
+      },
+      {
+        id: USER_VIKRAM,
+        full_name: 'Vikram Singh',
+        state_code: 'GJ',
+        district: 'Rajkot',
+        village: 'Shapar',
+        external_farmer_ref: 'GJ-RJT-009988',
+        preferred_language: 'hi'
       }
     ],
     centres: [
       {
         id: CENTRE_1,
-        name: 'APMC Procurement Centre 01',
+        name: 'SIH Demo Procurement Centre 01 (Gandhinagar)',
+        state_code: 'GJ',
+        district: 'Gandhinagar',
+        avg_service_minutes: 10
+      },
+      {
+        id: CENTRE_AHMEDABAD,
+        name: 'Ahmedabad APMC Grain & Cotton Market Yard Centre',
+        state_code: 'GJ',
+        district: 'Ahmedabad',
+        avg_service_minutes: 12
+      },
+      {
+        id: CENTRE_VADODARA,
+        name: 'Vadodara Central APMC Agro Procurement Hub',
+        state_code: 'GJ',
+        district: 'Vadodara',
+        avg_service_minutes: 10
+      },
+      {
+        id: CENTRE_RAJKOT,
+        name: 'Rajkot Bedi APMC Modern Commodity Terminal',
+        state_code: 'GJ',
+        district: 'Rajkot',
+        avg_service_minutes: 15
+      },
+      {
+        id: CENTRE_GONDAL,
+        name: 'Gondal APMC Groundnut & Cotton Marketing Yard',
         state_code: 'GJ',
         district: 'Rajkot',
         avg_service_minutes: 12
@@ -333,38 +374,101 @@ function seed(): MockDb {
     payments: []
   };
 
-  // Slots for today and the next two days so booking works across dates.
-  seedSlots(CENTRE_1, today, db);
-  seedSlots(CENTRE_1, addDaysIso(today, 1), db);
-  seedSlots(CENTRE_1, addDaysIso(today, 2), db);
+  // Slots for today and the next two days for all centres
+  const allCentres = [CENTRE_1, CENTRE_AHMEDABAD, CENTRE_VADODARA, CENTRE_RAJKOT, CENTRE_GONDAL];
+  for (const cid of allCentres) {
+    seedSlots(cid, today, db);
+    seedSlots(cid, addDaysIso(today, 1), db);
+    seedSlots(cid, addDaysIso(today, 2), db);
+  }
 
-  // Pre-seed Suresh into today's first slot, already checked in and waiting,
-  // so the operator dashboard/queue is non-empty on first login.
-  const firstSlot = db.slots.find((s) => s.date === today)!;
-  firstSlot.booked_count = 1;
+  // Pre-seed multiple farmers into the REAL-TIME 1-HOUR ACTIVE SLOT (9 AM to 6 PM),
+  // so the operator sees the full slot queue, and farmers see their exact position ahead.
+  const currentSlot = getCurrentHourSlot();
+  const sameSlot =
+    db.slots.find((s) => s.date === today && s.start === currentSlot.start) ||
+    db.slots.find((s) => s.date === today && s.start === '09:00') ||
+    db.slots.find((s) => s.date === today)!;
+  sameSlot.booked_count = 3;
+
+  const nowTime = Date.now();
+
+  // Farmer 1: Suresh Kumar — Currently CALLED at Desk
   db.seq.booking += 1;
-  const bookingId = uuid();
+  const bSureshId = uuid();
   db.bookings.push({
-    id: bookingId,
+    id: bSureshId,
     reference: makeBookingRef(db),
     farmer_id: USER_SURESH,
     centre_id: CENTRE_1,
     centre_name: 'APMC Procurement Centre 01',
-    slot_id: firstSlot.id,
-    slot_date: firstSlot.date,
-    slot_start: firstSlot.start,
-    slot_end: firstSlot.end,
-    commodity_code: 'PADDY_COMMON',
-    expected_quantity_qtl: '22.00',
+    slot_id: sameSlot.id,
+    slot_date: sameSlot.date,
+    slot_start: sameSlot.start,
+    slot_end: sameSlot.end,
+    commodity_code: 'WHEAT',
+    expected_quantity_qtl: '24.50',
     status: 'IN_QUEUE',
-    created_at: nowIso()
+    created_at: new Date(nowTime - 300000).toISOString()
   });
   db.queue.push({
     id: uuid(),
-    booking_id: bookingId,
+    booking_id: bSureshId,
+    centre_id: CENTRE_1,
+    state: 'CALLED',
+    created_at: new Date(nowTime - 300000).toISOString()
+  });
+
+  // Farmer 2: Ramesh Patel — Waiting in Queue (Token #2, 1 farmer ahead)
+  db.seq.booking += 1;
+  const bRameshId = uuid();
+  db.bookings.push({
+    id: bRameshId,
+    reference: makeBookingRef(db),
+    farmer_id: USER_RAMESH,
+    centre_id: CENTRE_1,
+    centre_name: 'APMC Procurement Centre 01',
+    slot_id: sameSlot.id,
+    slot_date: sameSlot.date,
+    slot_start: sameSlot.start,
+    slot_end: sameSlot.end,
+    commodity_code: 'GROUNDNUT',
+    expected_quantity_qtl: '18.00',
+    status: 'IN_QUEUE',
+    created_at: new Date(nowTime - 200000).toISOString()
+  });
+  db.queue.push({
+    id: uuid(),
+    booking_id: bRameshId,
     centre_id: CENTRE_1,
     state: 'WAITING',
-    created_at: nowIso()
+    created_at: new Date(nowTime - 200000).toISOString()
+  });
+
+  // Farmer 3: Vikram Singh — Waiting in Queue (Token #3, 2 farmers ahead)
+  db.seq.booking += 1;
+  const bVikramId = uuid();
+  db.bookings.push({
+    id: bVikramId,
+    reference: makeBookingRef(db),
+    farmer_id: USER_VIKRAM,
+    centre_id: CENTRE_1,
+    centre_name: 'APMC Procurement Centre 01',
+    slot_id: sameSlot.id,
+    slot_date: sameSlot.date,
+    slot_start: sameSlot.start,
+    slot_end: sameSlot.end,
+    commodity_code: 'COTTON_MEDIUM',
+    expected_quantity_qtl: '32.00',
+    status: 'IN_QUEUE',
+    created_at: new Date(nowTime - 100000).toISOString()
+  });
+  db.queue.push({
+    id: uuid(),
+    booking_id: bVikramId,
+    centre_id: CENTRE_1,
+    state: 'WAITING',
+    created_at: new Date(nowTime - 100000).toISOString()
   });
 
   return db;
@@ -528,19 +632,118 @@ export function createMockClient(): ApiClient {
       };
     },
 
-    async registerOperator(body: {
-      mobile: string;
-      fullName: string;
-      centreId?: string;
-      badgeId?: string;
-      department?: string;
-    }): Promise<OtpVerifyResponse> {
+    async loginWithPassword(body: PasswordLoginBody): Promise<OtpVerifyResponse> {
+      if (!body.password || body.password.length < 8) {
+        fail(ERROR_CODES.PASSWORD_TOO_SHORT, 'Password must be at least 8 characters.');
+      }
+      if (body.password.length > 64) {
+        fail(ERROR_CODES.PASSWORD_TOO_LONG, 'Password must be at most 64 characters.');
+      }
+
       let user = db.users.find((u) => u.mobile === body.mobile);
       if (!user) {
-        user = { id: uuid(), mobile: body.mobile, role: 'OPERATOR', profile_complete: true };
+        // Auto-provision demo account for seamless local evaluation if phone matches demo
+        user = {
+          id: uuid(),
+          mobile: body.mobile,
+          password: body.password,
+          role: body.mobile.includes('99999') ? 'OPERATOR' : 'FARMER',
+          profile_complete: true
+        };
+        db.users.push(user);
+        persist();
+      } else if (user.password && user.password !== body.password) {
+        // If an explicit password exists and doesn't match
+        fail(ERROR_CODES.INVALID_CREDENTIALS, 'Invalid mobile number or password.');
+      }
+
+      token = `mock.${user.id}`;
+      return {
+        access_token: token,
+        refresh_token: `mockrefresh.${user.id}`,
+        expires_in_seconds: 3600,
+        user: { id: user.id, role: user.role, profile_complete: user.profile_complete }
+      };
+    },
+
+    async registerFarmer(body: FarmerRegisterBody): Promise<OtpVerifyResponse> {
+      if (!body.privacy_acknowledged) {
+        fail(ERROR_CODES.PRIVACY_ACK_REQUIRED, 'Privacy acknowledgement is required.');
+      }
+      if (!body.password || body.password.length < 8) {
+        fail(ERROR_CODES.PASSWORD_TOO_SHORT, 'Password must be at least 8 characters.');
+      }
+      if (body.password.length > 64) {
+        fail(ERROR_CODES.PASSWORD_TOO_LONG, 'Password must be at most 64 characters.');
+      }
+
+      let user = db.users.find((u) => u.mobile === body.mobile);
+      if (!user) {
+        user = {
+          id: uuid(),
+          mobile: body.mobile,
+          password: body.password,
+          role: 'FARMER',
+          profile_complete: true
+        };
+        db.users.push(user);
+      } else {
+        user.role = 'FARMER';
+        user.password = body.password;
+        user.profile_complete = true;
+      }
+
+      const existingFarmer = db.farmers.find((f) => f.id === user.id);
+      if (existingFarmer) {
+        existingFarmer.full_name = body.full_name;
+        existingFarmer.state_code = body.state_code;
+        existingFarmer.district = body.district;
+        existingFarmer.village = body.village;
+        existingFarmer.external_farmer_ref = body.external_farmer_ref ?? null;
+        existingFarmer.preferred_language = body.preferred_language ?? 'hi';
+      } else {
+        db.farmers.push({
+          id: user.id,
+          full_name: body.full_name,
+          state_code: body.state_code,
+          district: body.district,
+          village: body.village,
+          external_farmer_ref: body.external_farmer_ref ?? null,
+          preferred_language: body.preferred_language ?? 'hi'
+        });
+      }
+
+      persist();
+      token = `mock.${user.id}`;
+      return {
+        access_token: token,
+        refresh_token: `mockrefresh.${user.id}`,
+        expires_in_seconds: 3600,
+        user: { id: user.id, role: 'FARMER', profile_complete: true }
+      };
+    },
+
+    async registerOperator(body: OperatorRegisterBody): Promise<OtpVerifyResponse> {
+      if (!body.password || body.password.length < 8) {
+        fail(ERROR_CODES.PASSWORD_TOO_SHORT, 'Password must be at least 8 characters.');
+      }
+      if (body.password.length > 64) {
+        fail(ERROR_CODES.PASSWORD_TOO_LONG, 'Password must be at most 64 characters.');
+      }
+
+      let user = db.users.find((u) => u.mobile === body.mobile);
+      if (!user) {
+        user = {
+          id: uuid(),
+          mobile: body.mobile,
+          password: body.password,
+          role: 'OPERATOR',
+          profile_complete: true
+        };
         db.users.push(user);
       } else {
         user.role = 'OPERATOR';
+        user.password = body.password;
         user.profile_complete = true;
       }
       const targetCentre = body.centreId || CENTRE_1;
@@ -632,15 +835,16 @@ export function createMockClient(): ApiClient {
 
       const q = db.queue.find((x) => x.booking_id === booking.id);
       let active_queue: FarmerDashboardResponse['active_queue'] = null;
-      if (q && q.state !== 'COMPLETED') {
+      if (q) {
         const centre = centreById(booking.centre_id);
         const { position, farmersAhead } = queuePosition(q);
+        const isDone = q.state === 'COMPLETED';
         active_queue = {
           booking_id: booking.id,
           state: q.state,
-          position,
-          farmers_ahead: farmersAhead,
-          estimated_wait_min: farmersAhead * centre.avg_service_minutes,
+          position: isDone ? 0 : position,
+          farmers_ahead: isDone ? 0 : farmersAhead,
+          estimated_wait_min: isDone ? 0 : farmersAhead * centre.avg_service_minutes,
           updated_at: q.created_at
         };
       }
@@ -832,6 +1036,20 @@ export function createMockClient(): ApiClient {
       if (op.centreId !== centreId) {
         fail(ERROR_CODES.OPERATOR_CENTRE_FORBIDDEN, 'Not your centre.');
       }
+
+      // If a farmer is currently CALLED or IN_SERVICE at the desk, mark them COMPLETED!
+      const currentActive = db.queue.find(
+        (q) => q.centre_id === centreId && (q.state === 'CALLED' || q.state === 'IN_SERVICE')
+      );
+      if (currentActive) {
+        currentActive.state = 'COMPLETED';
+        const activeBooking = db.bookings.find((x) => x.id === currentActive.booking_id);
+        if (activeBooking) {
+          activeBooking.status = 'COMPLETED';
+        }
+      }
+
+      // Pick the next WAITING farmer in queue
       const waiting = db.queue
         .filter((q) => q.centre_id === centreId && q.state === 'WAITING')
         .sort((a, b) => a.created_at.localeCompare(b.created_at));

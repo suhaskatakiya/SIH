@@ -18,6 +18,7 @@ import {
   MobileE164,
   NumericString,
   OtpCode,
+  Password,
   PaymentStatusSchema,
   PositiveNumericString,
   ProcurementEventTypeSchema,
@@ -50,6 +51,35 @@ export const OtpVerifyBody = z.object({
 });
 export type OtpVerifyBody = z.infer<typeof OtpVerifyBody>;
 
+export const PasswordLoginBody = z.object({
+  mobile: MobileE164,
+  password: Password
+});
+export type PasswordLoginBody = z.infer<typeof PasswordLoginBody>;
+
+export const FarmerRegisterBody = z.object({
+  mobile: MobileE164,
+  password: Password,
+  full_name: z.string().min(1).max(120),
+  state_code: StateCode,
+  district: z.string().min(1).max(120),
+  village: z.string().min(1).max(120),
+  external_farmer_ref: z.string().max(120).nullable().optional().default(null),
+  preferred_language: LanguageTag.optional().default('hi'),
+  privacy_acknowledged: z.boolean()
+});
+export type FarmerRegisterBody = z.infer<typeof FarmerRegisterBody>;
+
+export const OperatorRegisterBody = z.object({
+  mobile: MobileE164,
+  password: Password,
+  fullName: z.string().min(1).max(120),
+  centreId: z.string().optional(),
+  badgeId: z.string().optional(),
+  department: z.string().optional()
+});
+export type OperatorRegisterBody = z.infer<typeof OperatorRegisterBody>;
+
 export const SessionUser = z.object({
   id: Uuid,
   role: RoleSchema,
@@ -64,6 +94,8 @@ export const OtpVerifyResponse = z.object({
   user: SessionUser
 });
 export type OtpVerifyResponse = z.infer<typeof OtpVerifyResponse>;
+export type AuthResponse = OtpVerifyResponse;
+
 
 /* ================================================================== *
  * B. Profile / registration
@@ -389,6 +421,39 @@ export const PatchSlotBody = z
     message: 'at least one of capacity or active is required'
   });
 export type PatchSlotBody = z.infer<typeof PatchSlotBody>;
+
+/* ================================================================== *
+ * J. Operator centre queue / bookings listing
+ * ================================================================== */
+
+export const CentreBookingRow = z.object({
+  booking_id: Uuid,
+  reference: z.string(),
+  farmer_name: z.string(),
+  commodity_code: CommodityCode,
+  expected_quantity_qtl: NumericString,
+  slot_start: HhMm,
+  slot_end: HhMm,
+  booking_status: BookingStatusSchema,
+  queue_state: QueueStateSchema.nullable(),
+  position: z.number().int().nonnegative().nullable(),
+  procurement_id: Uuid.nullable(),
+  procurement_status: ProcurementStatusSchema.nullable()
+});
+export type CentreBookingRow = z.infer<typeof CentreBookingRow>;
+
+export const CentreBookingsQuery = z.object({
+  date: IsoDate.optional()
+});
+export type CentreBookingsQuery = z.infer<typeof CentreBookingsQuery>;
+
+export const CentreBookingsResponse = z.object({
+  centre_id: Uuid,
+  centre_name: z.string(),
+  date: IsoDate,
+  bookings: z.array(CentreBookingRow)
+});
+export type CentreBookingsResponse = z.infer<typeof CentreBookingsResponse>;
 
 /* ================================================================== *
  * Empty-body helper for POST endpoints that take no request body.

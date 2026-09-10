@@ -4,6 +4,7 @@
   import { t } from '$lib/i18n.svelte';
   import { session, logout } from '$lib/session.svelte';
   import LanguageToggle from './LanguageToggle.svelte';
+  import UserProfileModal from './UserProfileModal.svelte';
 
   const items = [
     { href: '/dashboard', key: 'nav.home', icon: '🏠' },
@@ -12,6 +13,8 @@
     { href: '/status', key: 'nav.status', icon: '📦' },
     { href: '/payment', key: 'nav.payment', icon: '💳' }
   ];
+
+  let showProfile = $state(false);
 
   async function onLogout() {
     await logout();
@@ -50,12 +53,16 @@
 
     <!-- Controls / Profile / Logout -->
     <div class="farmer-header__controls">
-      {#if farmerName}
-        <div class="user-chip" title={farmerName}>
-          <span class="user-chip__avatar">👤</span>
-          <span class="user-chip__name">{farmerName}</span>
-        </div>
-      {/if}
+      <button
+        type="button"
+        class="user-chip user-chip--btn"
+        title="View Profile Details"
+        onclick={() => (showProfile = true)}
+        aria-label="Open User Profile"
+      >
+        <span class="user-chip__avatar">👤</span>
+        <span class="user-chip__name">{farmerName || 'My Profile'}</span>
+      </button>
       <LanguageToggle />
       <button type="button" class="btn btn--ghost btn--sm logout-btn" onclick={onLogout}>
         {t('common.logout')}
@@ -63,6 +70,8 @@
     </div>
   </div>
 </header>
+
+<UserProfileModal bind:open={showProfile} />
 
 <style>
   .farmer-header {
@@ -180,6 +189,16 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .user-chip--btn {
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .user-chip--btn:hover {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
   }
 
   .user-chip__avatar {

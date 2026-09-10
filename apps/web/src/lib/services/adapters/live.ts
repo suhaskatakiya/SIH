@@ -23,8 +23,10 @@ import type {
   CreateProcurementEventBody,
   CreateSlotBody,
   FarmerDashboardResponse,
+  FarmerRegisterBody,
   MeResponse,
   OperatorDashboardResponse,
+  OperatorRegisterBody,
   OperatorSlot,
   OperatorSlotsQuery,
   OperatorSlotsResponse,
@@ -32,6 +34,7 @@ import type {
   OtpRequestResponse,
   OtpVerifyBody,
   OtpVerifyResponse,
+  PasswordLoginBody,
   PatchSlotBody,
   Payment,
   Procurement,
@@ -123,8 +126,12 @@ export function createLiveClient(baseUrl: string): ApiClient {
       request<OtpRequestResponse>('POST', ROUTES.authOtpRequest, { body, auth: false }),
     verifyOtp: (body: OtpVerifyBody) =>
       request<OtpVerifyResponse>('POST', ROUTES.authOtpVerify, { body, auth: false }),
-    registerOperator: (body: { mobile: string; fullName: string; centreId?: string; badgeId?: string; department?: string }) =>
-      request<OtpVerifyResponse>('POST', '/auth/operator/register', { body, auth: false }),
+    loginWithPassword: (body: PasswordLoginBody) =>
+      request<OtpVerifyResponse>('POST', ROUTES.authPasswordLogin, { body, auth: false }),
+    registerFarmer: (body: FarmerRegisterBody) =>
+      request<OtpVerifyResponse>('POST', ROUTES.authRegisterFarmer, { body, auth: false }),
+    registerOperator: (body: OperatorRegisterBody) =>
+      request<OtpVerifyResponse>('POST', ROUTES.authRegisterOperator, { body, auth: false }),
     async logout() {
       try {
         await request<void>('POST', ROUTES.authLogout, { body: {} });
@@ -189,13 +196,11 @@ export function createLiveClient(baseUrl: string): ApiClient {
     patchSlot: (slotId: string, body: PatchSlotBody) =>
       request<OperatorSlot>('PATCH', ROUTES.operatorSlot(slotId), { body }),
 
-    // Operator queue listing — no frozen Phase-1 route backs this (see api.ts).
-    async listCentreBookings(): Promise<CentreBookingsResponse> {
-      throw new ApiClientError(
-        501,
-        'NOT_AVAILABLE_LIVE',
-        'Operator queue listing needs a backend endpoint not in Phase 1. Use mock mode for the full operator demo.'
-      );
+    // Operator queue listing
+    async listCentreBookings(centreId: string, date: string): Promise<CentreBookingsResponse> {
+      return request<CentreBookingsResponse>('GET', ROUTES.operatorCentreBookings(centreId), {
+        query: { date }
+      });
     }
   };
 }

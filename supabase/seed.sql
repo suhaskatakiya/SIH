@@ -89,7 +89,8 @@ on conflict (user_id) do update set
 
 -- 4. public.centres
 insert into public.centres (id, name, state_code, district, address_text, avg_service_minutes, active)
-values (
+values
+(
   '11111111-1111-4111-8111-111111111111'::uuid,
   'SIH Demo Procurement Centre 01',
   'GJ',
@@ -97,11 +98,48 @@ values (
   'APMC Yard, Sector 11, Gandhinagar',
   10,
   true
+),
+(
+  '11111111-1111-4111-8111-222222222221'::uuid,
+  'Ahmedabad APMC Grain & Cotton Market Yard Centre',
+  'GJ',
+  'Ahmedabad',
+  'APMC Market Yard, National Highway 8, Vasna, Ahmedabad, Gujarat 380007',
+  12,
+  true
+),
+(
+  '11111111-1111-4111-8111-222222222222'::uuid,
+  'Vadodara Central APMC Agro Procurement Hub',
+  'GJ',
+  'Vadodara',
+  'Sayajipura APMC Yard, New VIP Road, Vadodara, Gujarat 390019',
+  10,
+  true
+),
+(
+  '11111111-1111-4111-8111-222222222223'::uuid,
+  'Rajkot Bedi APMC Modern Commodity Terminal',
+  'GJ',
+  'Rajkot',
+  'Bedi Marketing Yard, Rajkot-Morbi Highway, Rajkot, Gujarat 360003',
+  15,
+  true
+),
+(
+  '11111111-1111-4111-8111-222222222224'::uuid,
+  'Gondal APMC Groundnut & Cotton Marketing Yard',
+  'GJ',
+  'Rajkot',
+  'Marketing Yard, National Highway 27, Gondal, Gujarat 360311',
+  12,
+  true
 )
 on conflict (id) do update set
   name = excluded.name,
   state_code = excluded.state_code,
   district = excluded.district,
+  address_text = excluded.address_text,
   avg_service_minutes = excluded.avg_service_minutes,
   active = excluded.active;
 
@@ -271,14 +309,14 @@ on conflict (id) do update set
   active = excluded.active;
 
 -- 7. public.slots for today and upcoming 2 days
--- Slot 1 (Today 09:00 - 09:30): Suresh's pre-booked slot
+-- Slot 1 (Today 09:00 - 10:00): Suresh's pre-booked 1-hour slot
 insert into public.slots (id, centre_id, date, start_time, end_time, capacity, booked_count, active)
 values (
   '55555555-5555-4555-8555-555555555551'::uuid,
   '11111111-1111-4111-8111-111111111111'::uuid,
   current_date,
   '09:00'::time,
-  '09:30'::time,
+  '10:00'::time,
   12,
   1,
   true
@@ -287,40 +325,87 @@ on conflict (centre_id, date, start_time, end_time) do update set
   booked_count = greatest(public.slots.booked_count, 1),
   active = true;
 
--- Remaining slots for today
+-- Remaining 1-hour slots for today (10 AM to 6 PM)
 insert into public.slots (centre_id, date, start_time, end_time, capacity, booked_count, active)
 select '11111111-1111-4111-8111-111111111111'::uuid, current_date, t.st::time, t.et::time, 12, 0, true
 from (values
-  ('09:30', '10:00'),
-  ('10:00', '10:30'),
-  ('10:30', '11:00'),
-  ('11:00', '11:30')
+  ('10:00', '11:00'),
+  ('11:00', '12:00'),
+  ('12:00', '13:00'),
+  ('13:00', '14:00'),
+  ('14:00', '15:00'),
+  ('15:00', '16:00'),
+  ('16:00', '17:00'),
+  ('17:00', '18:00')
 ) as t(st, et)
 on conflict (centre_id, date, start_time, end_time) do nothing;
 
--- Slots for tomorrow (Day + 1)
+-- 1-hour slots for tomorrow (Day + 1, 9 AM to 6 PM)
 insert into public.slots (centre_id, date, start_time, end_time, capacity, booked_count, active)
 select '11111111-1111-4111-8111-111111111111'::uuid, current_date + interval '1 day', t.st::time, t.et::time, 12, 0, true
 from (values
-  ('09:00', '09:30'),
-  ('09:30', '10:00'),
-  ('10:00', '10:30'),
-  ('10:30', '11:00'),
-  ('11:00', '11:30')
+  ('09:00', '10:00'),
+  ('10:00', '11:00'),
+  ('11:00', '12:00'),
+  ('12:00', '13:00'),
+  ('13:00', '14:00'),
+  ('14:00', '15:00'),
+  ('15:00', '16:00'),
+  ('16:00', '17:00'),
+  ('17:00', '18:00')
 ) as t(st, et)
 on conflict (centre_id, date, start_time, end_time) do nothing;
 
--- Slots for Day + 2
+-- 1-hour slots for Day + 2 (9 AM to 6 PM)
 insert into public.slots (centre_id, date, start_time, end_time, capacity, booked_count, active)
 select '11111111-1111-4111-8111-111111111111'::uuid, current_date + interval '2 days', t.st::time, t.et::time, 12, 0, true
 from (values
-  ('09:00', '09:30'),
-  ('09:30', '10:00'),
-  ('10:00', '10:30'),
-  ('10:30', '11:00'),
-  ('11:00', '11:30')
+  ('09:00', '10:00'),
+  ('10:00', '11:00'),
+  ('11:00', '12:00'),
+  ('12:00', '13:00'),
+  ('13:00', '14:00'),
+  ('14:00', '15:00'),
+  ('15:00', '16:00'),
+  ('16:00', '17:00'),
+  ('17:00', '18:00')
 ) as t(st, et)
 on conflict (centre_id, date, start_time, end_time) do nothing;
+
+-- 1-hour slots for Gujarat Demo Hubs (Ahmedabad, Vadodara, Rajkot, Gondal) across 3 days
+insert into public.slots (centre_id, date, start_time, end_time, capacity, booked_count, active)
+select
+  c.id,
+  d.day_date,
+  t.st::time,
+  t.et::time,
+  15,
+  0,
+  true
+from (values
+  ('11111111-1111-4111-8111-222222222221'::uuid), -- Ahmedabad
+  ('11111111-1111-4111-8111-222222222222'::uuid), -- Vadodara
+  ('11111111-1111-4111-8111-222222222223'::uuid), -- Rajkot
+  ('11111111-1111-4111-8111-222222222224'::uuid)  -- Gondal
+) as c(id)
+cross join (values
+  (current_date),
+  (current_date + interval '1 day'),
+  (current_date + interval '2 days')
+) as d(day_date)
+cross join (values
+  ('09:00', '10:00'),
+  ('10:00', '11:00'),
+  ('11:00', '12:00'),
+  ('12:00', '13:00'),
+  ('13:00', '14:00'),
+  ('14:00', '15:00'),
+  ('15:00', '16:00'),
+  ('16:00', '17:00'),
+  ('17:00', '18:00')
+) as t(st, et)
+on conflict (centre_id, date, start_time, end_time) do nothing;
+
 
 -- 8. Suresh's booking (BK-2026-0001) in today's first slot
 insert into public.bookings (

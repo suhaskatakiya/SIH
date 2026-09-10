@@ -4,6 +4,7 @@
   import { logout } from '$lib/session.svelte';
   import { goto } from '$app/navigation';
   import LanguageToggle from './LanguageToggle.svelte';
+  import UserProfileModal from './UserProfileModal.svelte';
 
   const items = [
     { href: '/operator/dashboard', key: 'op.dashboard' },
@@ -11,6 +12,8 @@
     { href: '/operator/queue', key: 'op.queue' },
     { href: '/operator/procurement', key: 'op.procurement' }
   ];
+
+  let showProfile = $state(false);
 
   async function onLogout() {
     await logout();
@@ -32,9 +35,23 @@
         </a>
       {/each}
     </nav>
-    <LanguageToggle />
-    <button type="button" class="btn btn--ghost" style="min-height: 40px;" onclick={onLogout}>
-      {t('common.logout')}
-    </button>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <button
+        type="button"
+        class="btn btn--ghost"
+        style="min-height: 40px; padding: 0 12px; font-size: 1rem;"
+        title="View Operator Profile"
+        onclick={() => (showProfile = true)}
+        aria-label="Open User Profile"
+      >
+        👤 Profile
+      </button>
+      <LanguageToggle />
+      <button type="button" class="btn btn--ghost" style="min-height: 40px;" onclick={onLogout}>
+        {t('common.logout')}
+      </button>
+    </div>
   </div>
 </header>
+
+<UserProfileModal bind:open={showProfile} />

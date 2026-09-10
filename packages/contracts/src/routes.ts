@@ -18,6 +18,9 @@ export const ROUTES = {
   // A. Authentication
   authOtpRequest: '/auth/otp/request',
   authOtpVerify: '/auth/otp/verify',
+  authPasswordLogin: '/auth/login',
+  authRegisterFarmer: '/auth/register/farmer',
+  authRegisterOperator: '/auth/register/operator',
   authLogout: '/auth/logout',
 
   // B. Profile / registration
@@ -53,10 +56,11 @@ export const ROUTES = {
   operatorPaymentStatus: (procurementId: string) =>
     `/operator/payments/${procurementId}/status`,
 
-  // I. Operator dashboard / slot management
+  // I. Operator dashboard / slot management / queue bookings
   operatorDashboard: '/operator/dashboard',
   operatorSlots: '/operator/slots',
-  operatorSlot: (slotId: string) => `/operator/slots/${slotId}`
+  operatorSlot: (slotId: string) => `/operator/slots/${slotId}`,
+  operatorCentreBookings: (centreId: string) => `/operator/centres/${centreId}/bookings`
 } as const;
 
 /** Join the API prefix with a relative route path. */
